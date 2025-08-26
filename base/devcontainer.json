@@ -1,0 +1,34 @@
+{
+    "name": "Defense Builders SDK Base",
+    "image": "ghcr.io/iotactical/dbsdk-base:latest",
+    
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.remote-explorer",
+                "ms-vscode.vscode-json",
+                "GitHub.copilot"
+            ],
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "terminal.integrated.profiles.linux": {
+                    "bash": {
+                        "path": "/bin/bash",
+                        "args": ["-l"]
+                    }
+                }
+            }
+        }
+    },
+
+    "postCreateCommand": "echo 'Defense Builders SDK Base Environment Ready'",
+
+    "remoteUser": "vscode",
+    
+    "workspaceFolder": "/workspaces",
+
+    "containerEnv": {
+        "DBSDK_VERSION": "1.0.0",
+        "DBSDK_SDK_TYPE": "base"
+    }
+}

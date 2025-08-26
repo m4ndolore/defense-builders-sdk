@@ -1,0 +1,89 @@
+# Defense Builders SDK - Base Image
+# Secure, hardened foundation for all DBSDK containers
+# https://github.com/ioTACTICAL/defense-builders-sdk
+
+FROM ubuntu:22.04
+
+LABEL org.opencontainers.image.source="https://github.com/ioTACTICAL/defense-builders-sdk"
+LABEL org.opencontainers.image.description="Defense Builders SDK Base Image"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL maintainer="ioTACTICAL <engineering@iotactical.com>"
+
+# Environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DBSDK_VERSION=1.0.0
+ENV DBSDK_BUILD_DATE=${BUILD_DATE:-}
+ENV DBSDK_GIT_SHA=${GIT_SHA:-}
+
+# Install base security and development tools
+RUN apt-get update && apt-get install -y \
+    # Security essentials
+    ca-certificates \
+    gnupg \
+    curl \
+    wget \
+    # Development essentials
+    git \
+    build-essential \
+    software-properties-common \
+    apt-transport-https \
+    # Networking and utilities
+    net-tools \
+    iputils-ping \
+    # Text processing
+    jq \
+    vim \
+    nano \
+    # Process management
+    htop \
+    procps \
+    # UUID generation for telemetry
+    uuid-runtime \
+    # Clean up
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/*
+
+# Create non-root user for security
+RUN groupadd -g 1000 vscode && \
+    useradd -u 1000 -g 1000 -m -s /bin/bash vscode && \
+    echo "vscode ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Set up workspace directory
+RUN mkdir -p /workspaces && chown -R vscode:vscode /workspaces
+
+# Install DBSDK telemetry and security tools
+COPY telemetry/ /opt/dbsdk/telemetry/
+COPY security/ /opt/dbsdk/security/
+COPY scripts/ /opt/dbsdk/scripts/
+
+# Make scripts executable
+RUN chmod +x /opt/dbsdk/scripts/* && \
+    chmod +x /opt/dbsdk/telemetry/* && \
+    chmod +x /opt/dbsdk/security/*
+
+# Install telemetry service (privacy-first)
+RUN /opt/dbsdk/scripts/install-telemetry.sh
+
+# Run security hardening
+RUN /opt/dbsdk/scripts/harden-container.sh
+
+# Generate Software Bill of Materials (SBOM)
+RUN /opt/dbsdk/security/generate-sbom.sh
+
+# Switch to non-root user
+USER vscode
+WORKDIR /workspaces
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD /opt/dbsdk/scripts/healthcheck.sh
+
+# Default command
+CMD ["/bin/bash"]
+
+# Build metadata
+ARG BUILD_DATE
+ARG GIT_SHA
+LABEL org.opencontainers.image.created=${BUILD_DATE}
+LABEL org.opencontainers.image.revision=${GIT_SHA}

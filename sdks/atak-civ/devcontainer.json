@@ -1,0 +1,89 @@
+{
+    "name": "ATAK-CIV Development Environment",
+    "image": "ghcr.io/iotactical/dbsdk-atak-civ:latest",
+    
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "vscjava.vscode-java-pack",
+                "vscjava.vscode-gradle",
+                "ms-vscode.remote-explorer",
+                "ms-vscode.vscode-json",
+                "redhat.vscode-xml",
+                "GitHub.copilot"
+            ],
+            "settings": {
+                "java.home": "/usr/lib/jvm/java-17-openjdk-amd64",
+                "java.configuration.updateBuildConfiguration": "automatic",
+                "java.gradle.buildServer.enabled": "on",
+                "java.import.gradle.enabled": true,
+                "java.compile.nullAnalysis.mode": "automatic",
+                "android.home": "/opt/android-sdk",
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "terminal.integrated.profiles.linux": {
+                    "bash": {
+                        "path": "/bin/bash",
+                        "args": ["-l"]
+                    }
+                },
+                "files.exclude": {
+                    "**/build/": true,
+                    "**/.gradle/": true,
+                    "**/bin/": true
+                },
+                "search.exclude": {
+                    "**/build/": true,
+                    "**/.gradle/": true,
+                    "**/bin/": true,
+                    "**/node_modules/": true
+                }
+            }
+        }
+    },
+
+    "postCreateCommand": [
+        "echo 'ATAK-CIV Development Environment initialized!'",
+        "echo 'ATAK-CIV source available at: /opt/atak-civ'",
+        "echo 'Ready to develop ATAK plugins!'",
+        "/opt/dbsdk/atak-civ/scripts/post-create.sh"
+    ].join(" && "),
+
+    "postStartCommand": "echo 'ATAK-CIV environment ready for development!'",
+
+    "forwardPorts": [8080, 3000, 5037, 8000],
+    
+    "portsAttributes": {
+        "8080": {
+            "label": "ATAK Plugin Server",
+            "onAutoForward": "notify"
+        },
+        "5037": {
+            "label": "ADB Server", 
+            "onAutoForward": "silent"
+        },
+        "8000": {
+            "label": "Development Server",
+            "onAutoForward": "openPreview"
+        }
+    },
+
+    "mounts": [
+        "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind,consistency=cached"
+    ],
+
+    "remoteUser": "vscode",
+    
+    "workspaceFolder": "/workspaces",
+
+    "onCreateCommand": "echo 'ATAK-CIV container created successfully'",
+
+    "updateContentCommand": "echo 'ATAK-CIV environment updated'",
+
+    "containerEnv": {
+        "ANDROID_HOME": "/opt/android-sdk",
+        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64",
+        "DBSDK_SDK_TYPE": "atak-civ",
+        "DBSDK_SDK_VERSION": "4.10.0",
+        "ATAK_CIV_SOURCE": "/opt/atak-civ"
+    }
+}
