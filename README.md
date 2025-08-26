@@ -113,7 +113,7 @@ Open source to enable community verification and trust.
 ## Links
 
 - **Website**: [iotactical.co](https://iotactical.co)
-- **Container Registry**: [ghcr.io/iotactical](https://github.com/orgs/ioTACTICAL/packages)
+- **Container Registry**: [ghcr.io/iotactical](https://github.com/orgs/iotactical/packages)
 - **Documentation**: [docs.iotactical.co](https://docs.iotactical.co)
 - **Support**: [support@iotactical.co](mailto:support@iotactical.co)
 

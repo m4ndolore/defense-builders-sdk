@@ -1,10 +1,10 @@
 # Defense Builders SDK - Base Image
 # Secure, hardened foundation for all DBSDK containers
-# https://github.com/ioTACTICAL/defense-builders-sdk
+# https://github.com/iotactical/defense-builders-sdk
 
 FROM ubuntu:22.04
 
-LABEL org.opencontainers.image.source="https://github.com/ioTACTICAL/defense-builders-sdk"
+LABEL org.opencontainers.image.source="https://github.com/iotactical/defense-builders-sdk"
 LABEL org.opencontainers.image.description="Defense Builders SDK Base Image"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL maintainer="ioTACTICAL <engineering@iotactical.co>"

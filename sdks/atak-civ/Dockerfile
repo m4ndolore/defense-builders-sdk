@@ -1,10 +1,10 @@
 # Defense Builders SDK - ATAK-CIV
 # Android Tactical Assault Kit (Civil) Development Environment
-# https://github.com/ioTACTICAL/defense-builders-sdk
+# https://github.com/iotactical/defense-builders-sdk
 
 FROM ghcr.io/iotactical/dbsdk-base:latest
 
-LABEL org.opencontainers.image.source="https://github.com/ioTACTICAL/defense-builders-sdk"
+LABEL org.opencontainers.image.source="https://github.com/iotactical/defense-builders-sdk"
 LABEL org.opencontainers.image.description="DBSDK ATAK-CIV Development Environment"
 LABEL org.opencontainers.image.licenses="MIT"
 

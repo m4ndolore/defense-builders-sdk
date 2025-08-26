@@ -33,7 +33,7 @@ Thank you for your interest in contributing to the Defense Builders SDK! This pr
 ### Local Development
 ```bash
 # Clone the repository
-git clone https://github.com/ioTACTICAL/defense-builders-sdk.git
+git clone https://github.com/iotactical/defense-builders-sdk.git
 cd defense-builders-sdk
 
 # Build base image locally
