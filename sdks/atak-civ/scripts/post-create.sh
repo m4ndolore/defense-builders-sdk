@@ -74,7 +74,7 @@ This directory is for your ATAK plugin development.
 
 - [ATAK-CIV GitHub](https://github.com/deptofdefense/AndroidTacticalAssaultKit-CIV)
 - [ATAK Plugin Development Guide](https://www.civtak.org/)
-- [ioTACTICAL Documentation](https://docs.iotactical.com)
+- [ioTACTICAL Documentation](https://docs.iotactical.co)
 EOF
 fi
 
@@ -130,3 +130,8 @@ chown -R vscode:vscode /workspaces
 echo "Post-create setup complete!"
 echo "ATAK-CIV development environment ready"
 echo "Start developing in /workspaces/plugins/"
+
+# Run DBSDK post-setup hook (shows telemetry disclosure)
+if [[ -x /opt/dbsdk/scripts/post-sdk-setup.sh ]]; then
+    /opt/dbsdk/scripts/post-sdk-setup.sh
+fi

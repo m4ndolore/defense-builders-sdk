@@ -159,12 +159,12 @@ sdks/your-sdk-name/
 ### Community Support
 - **GitHub Discussions**: General questions and ideas
 - **GitHub Issues**: Bug reports and feature requests
-- **Documentation**: [docs.iotactical.com](https://docs.iotactical.com)
+- **Documentation**: [docs.iotactical.co](https://docs.iotactical.co)
 
 ### Direct Support
-- **Security Issues**: [security@iotactical.com](mailto:security@iotactical.com)
-- **General Support**: [support@iotactical.com](mailto:support@iotactical.com)
-- **Enterprise**: [enterprise@iotactical.com](mailto:enterprise@iotactical.com)
+- **Security Issues**: [security@iotactical.co](mailto:security@iotactical.co)
+- **General Support**: [support@iotactical.co](mailto:support@iotactical.co)
+- **Enterprise**: [enterprise@iotactical.co](mailto:enterprise@iotactical.co)
 
 ## License
 

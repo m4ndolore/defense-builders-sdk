@@ -1,0 +1,307 @@
+#!/bin/bash
+# DBSDK SBOM Management
+# Software Bill of Materials viewing and export
+
+set -e
+
+# Source utility functions
+DBSDK_BASE_DIR="/opt/dbsdk"
+source "${DBSDK_BASE_DIR}/scripts/dbsdk-lib.sh"
+
+SBOM_FILE="${DBSDK_BASE_DIR}/sbom.json"
+
+# Show help
+show_help() {
+    echo -e "${BOLD}${BLUE}DBSDK SBOM Management${NC}"
+    echo -e "${BOLD}${BLUE}═══════════════════${NC}"
+    echo ""
+    echo -e "${BOLD}USAGE:${NC}"
+    echo "  dbsdk sbom [OPTIONS]"
+    echo ""
+    echo -e "${BOLD}OPTIONS:${NC}"
+    echo "  --show          Show SBOM summary (default)"
+    echo "  --export FILE   Export SBOM to file"
+    echo "  --validate      Validate SBOM format"
+    echo "  --stats         Show SBOM statistics"
+    echo "  --help          Show this help message"
+    echo ""
+    echo -e "${BOLD}EXAMPLES:${NC}"
+    echo "  dbsdk sbom                           # Show SBOM summary"
+    echo "  dbsdk sbom --export ./my-sbom.json  # Export to file"
+    echo "  dbsdk sbom --stats                  # Show detailed statistics"
+    echo ""
+}
+
+# Check if SBOM file exists
+check_sbom_file() {
+    if [[ ! -f "$SBOM_FILE" ]]; then
+        log_error "SBOM file not found at $SBOM_FILE"
+        echo ""
+        echo "This could mean:"
+        echo "  • SBOM generation failed during container build"
+        echo "  • File was deleted or moved"
+        echo "  • You're running in a custom environment"
+        echo ""
+        echo "Contact support@iotactical.co for assistance."
+        exit 1
+    fi
+}
+
+# Validate SBOM file
+validate_sbom() {
+    log_info "Validating SBOM format..."
+    
+    if ! command_exists jq; then
+        log_error "jq is required for SBOM validation"
+        exit 1
+    fi
+    
+    # Check if file is valid JSON
+    if ! jq empty "$SBOM_FILE" 2>/dev/null; then
+        log_error "SBOM file contains invalid JSON"
+        exit 1
+    fi
+    
+    # Check required SPDX fields
+    local spdx_version
+    spdx_version=$(jq -r '.spdxVersion // empty' "$SBOM_FILE" 2>/dev/null)
+    
+    if [[ -z "$spdx_version" ]]; then
+        log_warning "SBOM missing SPDX version field"
+    else
+        log_success "Valid SPDX format (version: $spdx_version)"
+    fi
+    
+    local document_name
+    document_name=$(jq -r '.name // empty' "$SBOM_FILE" 2>/dev/null)
+    
+    if [[ -n "$document_name" ]]; then
+        log_success "Document name: $document_name"
+    fi
+    
+    echo ""
+    log_success "SBOM validation complete"
+}
+
+# Show SBOM summary
+show_sbom_summary() {
+    check_sbom_file
+    
+    if ! command_exists jq; then
+        log_error "jq is required to parse SBOM. Showing raw file..."
+        echo ""
+        cat "$SBOM_FILE"
+        return
+    fi
+    
+    echo -e "${BOLD}${BLUE}Software Bill of Materials (SBOM)${NC}"
+    echo -e "${BOLD}${BLUE}═════════════════════════════════${NC}"
+    echo ""
+    
+    # Basic information
+    local document_name
+    document_name=$(jq -r '.name // "Unknown"' "$SBOM_FILE" 2>/dev/null)
+    echo -e "${BOLD}Document:${NC} $document_name"
+    
+    local spdx_version
+    spdx_version=$(jq -r '.spdxVersion // "Unknown"' "$SBOM_FILE" 2>/dev/null)
+    echo -e "${BOLD}SPDX Version:${NC} $spdx_version"
+    
+    local created_date
+    created_date=$(jq -r '.creationInfo.created // "Unknown"' "$SBOM_FILE" 2>/dev/null)
+    echo -e "${BOLD}Created:${NC} $created_date"
+    
+    local namespace
+    namespace=$(jq -r '.documentNamespace // "Unknown"' "$SBOM_FILE" 2>/dev/null)
+    echo -e "${BOLD}Namespace:${NC} $namespace"
+    
+    echo ""
+    
+    # Package information
+    local package_count
+    package_count=$(jq '.packages | length' "$SBOM_FILE" 2>/dev/null || echo "0")
+    echo -e "${BOLD}Packages:${NC} $package_count"
+    
+    if (( package_count > 0 )); then
+        echo ""
+        echo -e "${BOLD}Package Summary:${NC}"
+        
+        # Show first few packages
+        local max_packages=10
+        jq -r --argjson max "$max_packages" '
+            .packages[0:$max] | 
+            .[] | 
+            "  • " + .name + " (" + (.downloadLocation // "unknown source") + ")"
+        ' "$SBOM_FILE" 2>/dev/null || echo "  Unable to parse package information"
+        
+        if (( package_count > max_packages )); then
+            echo "  ... and $((package_count - max_packages)) more packages"
+        fi
+    fi
+    
+    echo ""
+    echo -e "${BOLD}SBOM File:${NC} $SBOM_FILE"
+    
+    local file_size
+    file_size=$(stat -f%z "$SBOM_FILE" 2>/dev/null || stat -c%s "$SBOM_FILE" 2>/dev/null || echo "unknown")
+    if [[ "$file_size" != "unknown" ]]; then
+        echo -e "${BOLD}File Size:${NC} $(format_file_size "$file_size")"
+    fi
+    
+    echo ""
+    echo -e "${DIM}Use --export to save SBOM to a custom location${NC}"
+    echo -e "${DIM}Use --stats for detailed statistics${NC}"
+}
+
+# Show SBOM statistics
+show_sbom_stats() {
+    check_sbom_file
+    
+    if ! command_exists jq; then
+        log_error "jq is required for SBOM statistics"
+        exit 1
+    fi
+    
+    echo -e "${BOLD}${BLUE}SBOM Detailed Statistics${NC}"
+    echo -e "${BOLD}${BLUE}══════════════════════${NC}"
+    echo ""
+    
+    # Package statistics
+    local total_packages
+    total_packages=$(jq '.packages | length' "$SBOM_FILE" 2>/dev/null || echo "0")
+    echo -e "${BOLD}Total Packages:${NC} $total_packages"
+    
+    # License analysis
+    local unique_licenses
+    unique_licenses=$(jq -r '.packages[] | .licenseConcluded // "NOASSERTION"' "$SBOM_FILE" 2>/dev/null | \
+                     sort -u | wc -l || echo "0")
+    echo -e "${BOLD}Unique Licenses:${NC} $unique_licenses"
+    
+    # Relationship count
+    local relationships
+    relationships=$(jq '.relationships | length' "$SBOM_FILE" 2>/dev/null || echo "0")
+    echo -e "${BOLD}Relationships:${NC} $relationships"
+    
+    echo ""
+    echo -e "${BOLD}License Distribution:${NC}"
+    
+    # Show license distribution (top 5)
+    jq -r '.packages[] | .licenseConcluded // "NOASSERTION"' "$SBOM_FILE" 2>/dev/null | \
+    sort | uniq -c | sort -nr | head -5 | \
+    while read -r count license; do
+        echo "  $license: $count packages"
+    done 2>/dev/null || echo "  Unable to analyze license distribution"
+    
+    echo ""
+    echo -e "${BOLD}File Information:${NC}"
+    echo -e "${BOLD}Location:${NC} $SBOM_FILE"
+    
+    local file_size
+    file_size=$(stat -f%z "$SBOM_FILE" 2>/dev/null || stat -c%s "$SBOM_FILE" 2>/dev/null || echo "unknown")
+    if [[ "$file_size" != "unknown" ]]; then
+        echo -e "${BOLD}Size:${NC} $(format_file_size "$file_size")"
+    fi
+    
+    local last_modified
+    last_modified=$(stat -f%Sm -t"%Y-%m-%d %H:%M:%S" "$SBOM_FILE" 2>/dev/null || \
+                   stat -c%y "$SBOM_FILE" 2>/dev/null | cut -d'.' -f1 || echo "unknown")
+    echo -e "${BOLD}Last Modified:${NC} $last_modified"
+}
+
+# Export SBOM to file
+export_sbom() {
+    local output_file="$1"
+    
+    if [[ -z "$output_file" ]]; then
+        log_error "Export file path is required"
+        echo "Usage: dbsdk sbom --export FILE"
+        exit 1
+    fi
+    
+    check_sbom_file
+    
+    log_info "Exporting SBOM to $output_file..."
+    
+    # Create directory if it doesn't exist
+    local output_dir
+    output_dir=$(dirname "$output_file")
+    if [[ ! -d "$output_dir" ]]; then
+        mkdir -p "$output_dir" || {
+            log_error "Cannot create directory: $output_dir"
+            exit 1
+        }
+    fi
+    
+    # Copy SBOM file
+    if cp "$SBOM_FILE" "$output_file"; then
+        log_success "SBOM exported to: $output_file"
+        
+        local file_size
+        file_size=$(stat -f%z "$output_file" 2>/dev/null || stat -c%s "$output_file" 2>/dev/null || echo "unknown")
+        if [[ "$file_size" != "unknown" ]]; then
+            echo -e "${DIM}File size: $(format_file_size "$file_size")${NC}"
+        fi
+    else
+        log_error "Failed to export SBOM to: $output_file"
+        exit 1
+    fi
+}
+
+# Main function
+main() {
+    local action="show"
+    local export_file=""
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            "--show")
+                action="show"
+                shift
+                ;;
+            "--export")
+                action="export"
+                export_file="$2"
+                shift 2
+                ;;
+            "--validate")
+                action="validate"
+                shift
+                ;;
+            "--stats")
+                action="stats"
+                shift
+                ;;
+            "--help"|"-h")
+                show_help
+                exit 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+    
+    case "$action" in
+        "show")
+            show_sbom_summary
+            ;;
+        "export")
+            export_sbom "$export_file"
+            ;;
+        "validate")
+            validate_sbom
+            ;;
+        "stats")
+            show_sbom_stats
+            ;;
+        *)
+            log_error "Unknown action: $action"
+            exit 1
+            ;;
+    esac
+}
+
+# Run main function
+main "$@"

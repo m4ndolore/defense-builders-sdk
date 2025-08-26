@@ -7,7 +7,7 @@ FROM ubuntu:22.04
 LABEL org.opencontainers.image.source="https://github.com/ioTACTICAL/defense-builders-sdk"
 LABEL org.opencontainers.image.description="Defense Builders SDK Base Image"
 LABEL org.opencontainers.image.licenses="MIT"
-LABEL maintainer="ioTACTICAL <engineering@iotactical.com>"
+LABEL maintainer="ioTACTICAL <engineering@iotactical.co>"
 
 # Environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -61,6 +61,9 @@ COPY scripts/ /opt/dbsdk/scripts/
 RUN chmod +x /opt/dbsdk/scripts/* && \
     chmod +x /opt/dbsdk/telemetry/* && \
     chmod +x /opt/dbsdk/security/*
+
+# Install DBSDK utility in system PATH
+RUN ln -s /opt/dbsdk/scripts/dbsdk /usr/local/bin/dbsdk
 
 # Install telemetry service (privacy-first)
 RUN /opt/dbsdk/scripts/install-telemetry.sh

@@ -34,7 +34,7 @@ $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list | head -5
 
 # Set up Git configuration for the container
 git config --system user.name "ATAK Developer"
-git config --system user.email "developer@iotactical.com"
+git config --system user.email "developer@iotactical.co"
 git config --system init.defaultBranch main
 
 # Create helpful aliases

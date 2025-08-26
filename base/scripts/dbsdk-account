@@ -1,0 +1,512 @@
+#!/bin/bash
+# DBSDK Account Management
+# ioTACTICAL account authentication and subscription management
+
+set -e
+
+# Source utility functions
+DBSDK_BASE_DIR="/opt/dbsdk"
+source "${DBSDK_BASE_DIR}/scripts/dbsdk-lib.sh"
+
+# Show help
+show_help() {
+    echo -e "${BOLD}${BLUE}DBSDK Account Management${NC}"
+    echo -e "${BOLD}${BLUE}═══════════════════════${NC}"
+    echo ""
+    echo -e "${BOLD}USAGE:${NC}"
+    echo "  dbsdk account [COMMAND] [OPTIONS]"
+    echo ""
+    echo -e "${BOLD}COMMANDS:${NC}"
+    echo "  login           Authenticate with ioTACTICAL account"
+    echo "  logout          Sign out and remove stored credentials"
+    echo "  status          Show authentication and subscription status"
+    echo "  subscription    Show subscription details"
+    echo "  upgrade         Information about upgrading plans"
+    echo "  help            Show this help message"
+    echo ""
+    echo -e "${BOLD}EXAMPLES:${NC}"
+    echo "  dbsdk account login             # Sign in to your account"
+    echo "  dbsdk account status            # Check authentication status"
+    echo "  dbsdk account subscription      # View subscription details"
+    echo ""
+    echo -e "${BOLD}SUBSCRIPTION TIERS:${NC}"
+    echo -e "  • ${BLUE}Basic${NC}: DBSDK Codespaces access through ioTACTICAL"
+    echo -e "  • ${PURPLE}Premium${NC}: Advanced security & compliance tools ${YELLOW}[Coming Soon]${NC}"
+    echo ""
+    echo -e "${BOLD}GETTING STARTED:${NC}"
+    echo "  1. Visit: ${CYAN}https://iotactical.co/signup${NC}"
+    echo "  2. Create your free account"
+    echo "  3. Run: ${BOLD}dbsdk account login${NC}"
+    echo "  4. Upgrade to Basic for Codespaces access"
+    echo ""
+}
+
+# Show authentication status
+show_auth_status() {
+    echo -e "${BOLD}${BLUE}ioTACTICAL Account Status${NC}"
+    echo -e "${BOLD}${BLUE}═══════════════════════${NC}"
+    echo ""
+    
+    if [[ -f "$DBSDK_AUTH_TOKEN_FILE" ]]; then
+        local auth_token
+        auth_token=$(cat "$DBSDK_AUTH_TOKEN_FILE" 2>/dev/null || echo "")
+        
+        if [[ -n "$auth_token" ]]; then
+            echo -e "${BOLD}Authentication:${NC} ${GREEN}✓ Signed in${NC}"
+            
+            # Try to get user info
+            local user_info
+            user_info=$(curl -s -m 10 \
+                -H "Authorization: Bearer $auth_token" \
+                -H "User-Agent: DBSDK/${DBSDK_VERSION}" \
+                "${IOTACTICAL_API_BASE}/user/profile" 2>/dev/null || echo "{}")
+            
+            local email
+            email=$(parse_json "$user_info" "email")
+            if [[ -n "$email" ]]; then
+                echo -e "${BOLD}Account:${NC} $email"
+            fi
+            
+            # Check subscription status
+            local subscription_info
+            subscription_info=$(curl -s -m 10 \
+                -H "Authorization: Bearer $auth_token" \
+                -H "User-Agent: DBSDK/${DBSDK_VERSION}" \
+                "$IOTACTICAL_SUBSCRIPTION_ENDPOINT" 2>/dev/null || echo "{}")
+            
+            local subscription_status
+            subscription_status=$(parse_json "$subscription_info" "status")
+            
+            echo -e "${BOLD}Subscription:${NC} ${subscription_status:-Unknown}"
+            
+            case "$subscription_status" in
+                "basic")
+                    echo -e "${BOLD}Plan:${NC} ${BLUE}Basic${NC} ⚡"
+                    echo "  • DBSDK Codespaces access"
+                    echo "  • Basic DBSDK features"
+                    echo "  • Community support"
+                    ;;
+                "premium"|"enterprise")
+                    echo -e "${BOLD}Plan:${NC} ${PURPLE}Premium${NC} 🚀 ${YELLOW}[Early Access]${NC}"
+                    echo "  • All Basic features"
+                    echo "  • Advanced security tools"
+                    echo "  • Priority support"
+                    ;;
+                "free")
+                    echo -e "${BOLD}Plan:${NC} ${GREEN}Free${NC}"
+                    echo "  • Local DBSDK container usage"
+                    echo "  • Basic features only"
+                    echo "  • Upgrade for Codespaces access"
+                    ;;
+                "inactive")
+                    echo -e "${BOLD}Plan:${NC} ${YELLOW}Inactive${NC}"
+                    echo "  • Subscription may have expired"
+                    echo "  • Contact support for assistance"
+                    ;;
+                *)
+                    echo -e "${BOLD}Plan:${NC} ${YELLOW}Unknown${NC}"
+                    echo "  • Unable to verify subscription"
+                    echo "  • Check network connection"
+                    ;;
+            esac
+            
+            local expires_at
+            expires_at=$(parse_json "$subscription_info" "expires_at")
+            if [[ -n "$expires_at" && "$expires_at" != "null" ]]; then
+                echo -e "${BOLD}Expires:${NC} $expires_at"
+            fi
+            
+        else
+            echo -e "${BOLD}Authentication:${NC} ${RED}✗ Invalid token${NC}"
+            echo "  Run: ${BOLD}dbsdk account login${NC} to sign in"
+        fi
+    else
+        echo -e "${BOLD}Authentication:${NC} ${YELLOW}○ Not signed in${NC}"
+        echo ""
+        echo -e "${BOLD}To get started:${NC}"
+        echo "  1. Create account: ${CYAN}https://iotactical.co/signup${NC}"
+        echo "  2. Sign in: ${BOLD}dbsdk account login${NC}"
+        echo "  3. View plans: ${CYAN}https://iotactical.co/plans${NC}"
+    fi
+    
+    echo ""
+}
+
+# Handle user login
+handle_login() {
+    echo -e "${BOLD}${BLUE}Sign in to ioTACTICAL${NC}"
+    echo -e "${BOLD}${BLUE}═══════════════════${NC}"
+    echo ""
+    
+    # Check if already logged in
+    if [[ -f "$DBSDK_AUTH_TOKEN_FILE" ]]; then
+        local auth_token
+        auth_token=$(cat "$DBSDK_AUTH_TOKEN_FILE" 2>/dev/null || echo "")
+        
+        if [[ -n "$auth_token" ]]; then
+            # Verify current token
+            local user_info
+            user_info=$(curl -s -m 10 \
+                -H "Authorization: Bearer $auth_token" \
+                -H "User-Agent: DBSDK/${DBSDK_VERSION}" \
+                "${IOTACTICAL_API_BASE}/user/profile" 2>/dev/null || echo "{}")
+            
+            local email
+            email=$(parse_json "$user_info" "email")
+            
+            if [[ -n "$email" ]]; then
+                log_info "Already signed in as: $email"
+                echo ""
+                read -p "Sign in with a different account? (y/N): " -n 1 -r
+                echo ""
+                if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                    echo "Keeping current session."
+                    return 0
+                fi
+                echo ""
+            fi
+        fi
+    fi
+    
+    # Get credentials
+    echo "Enter your ioTACTICAL credentials:"
+    echo ""
+    
+    read -p "Email: " email
+    if ! validate_email "$email"; then
+        log_error "Invalid email format"
+        exit 1
+    fi
+    
+    read -s -p "Password: " password
+    echo ""
+    
+    if [[ -z "$password" ]]; then
+        log_error "Password cannot be empty"
+        exit 1
+    fi
+    
+    echo ""
+    log_info "Authenticating..."
+    
+    # Make authentication request
+    local auth_response
+    auth_response=$(curl -s -m 30 \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "User-Agent: DBSDK/${DBSDK_VERSION}" \
+        -d "{\"email\":\"$email\",\"password\":\"$password\"}" \
+        "${IOTACTICAL_API_BASE}/auth/login" 2>/dev/null || echo "{}")
+    
+    local auth_token
+    auth_token=$(parse_json "$auth_response" "token")
+    
+    local error_message
+    error_message=$(parse_json "$auth_response" "error")
+    
+    if [[ -n "$auth_token" ]]; then
+        # Store the token securely
+        safe_write_file "$DBSDK_AUTH_TOKEN_FILE" "$auth_token"
+        
+        log_success "Successfully signed in!"
+        echo ""
+        echo -e "${BOLD}Welcome to ioTACTICAL DBSDK!${NC}"
+        echo ""
+        
+        # Show subscription status
+        show_subscription_info_brief
+        
+    elif [[ -n "$error_message" ]]; then
+        log_error "Authentication failed: $error_message"
+        
+        if [[ "$error_message" =~ "invalid credentials" ]]; then
+            echo ""
+            echo "Forgot your password? Visit: ${CYAN}https://iotactical.co/reset-password${NC}"
+        fi
+        exit 1
+    else
+        log_error "Authentication failed: Unable to connect to ioTACTICAL"
+        echo ""
+        echo "This could be due to:"
+        echo "  • Network connectivity issues"
+        echo "  • ioTACTICAL API temporarily unavailable"
+        echo "  • Firewall blocking HTTPS requests"
+        echo ""
+        echo "Please try again later or contact: support@iotactical.co"
+        exit 1
+    fi
+}
+
+# Handle user logout
+handle_logout() {
+    echo -e "${BOLD}${BLUE}Sign out of ioTACTICAL${NC}"
+    echo -e "${BOLD}${BLUE}═══════════════════${NC}"
+    echo ""
+    
+    if [[ -f "$DBSDK_AUTH_TOKEN_FILE" ]]; then
+        # Optional: Invalidate token on server side
+        local auth_token
+        auth_token=$(cat "$DBSDK_AUTH_TOKEN_FILE" 2>/dev/null || echo "")
+        
+        if [[ -n "$auth_token" ]]; then
+            curl -s -m 10 \
+                -X POST \
+                -H "Authorization: Bearer $auth_token" \
+                -H "User-Agent: DBSDK/${DBSDK_VERSION}" \
+                "${IOTACTICAL_API_BASE}/auth/logout" >/dev/null 2>&1 || true
+        fi
+        
+        # Remove local token
+        rm "$DBSDK_AUTH_TOKEN_FILE"
+        log_success "Successfully signed out"
+    else
+        log_info "Not currently signed in"
+    fi
+    
+    echo ""
+    echo "Thanks for using DBSDK! Sign in anytime with:"
+    echo "  ${BOLD}dbsdk account login${NC}"
+    echo ""
+}
+
+# Show subscription information
+show_subscription_info() {
+    echo -e "${BOLD}${BLUE}Subscription Details${NC}"
+    echo -e "${BOLD}${BLUE}══════════════════${NC}"
+    echo ""
+    
+    if [[ ! -f "$DBSDK_AUTH_TOKEN_FILE" ]]; then
+        log_warning "Not signed in"
+        echo ""
+        echo "Sign in to view subscription details:"
+        echo "  ${BOLD}dbsdk account login${NC}"
+        return 1
+    fi
+    
+    local auth_token
+    auth_token=$(cat "$DBSDK_AUTH_TOKEN_FILE" 2>/dev/null || echo "")
+    
+    if [[ -z "$auth_token" ]]; then
+        log_error "Invalid authentication token"
+        echo "Please sign in again: ${BOLD}dbsdk account login${NC}"
+        return 1
+    fi
+    
+    log_info "Retrieving subscription information..."
+    
+    local subscription_info
+    subscription_info=$(curl -s -m 10 \
+        -H "Authorization: Bearer $auth_token" \
+        -H "User-Agent: DBSDK/${DBSDK_VERSION}" \
+        "$IOTACTICAL_SUBSCRIPTION_ENDPOINT" 2>/dev/null || echo "{}")
+    
+    local status
+    status=$(parse_json "$subscription_info" "status")
+    
+    local plan
+    plan=$(parse_json "$subscription_info" "plan")
+    
+    local expires_at
+    expires_at=$(parse_json "$subscription_info" "expires_at")
+    
+    echo ""
+    echo -e "${BOLD}Current Plan:${NC} ${plan:-Unknown}"
+    echo -e "${BOLD}Status:${NC} ${status:-Unknown}"
+    
+    if [[ -n "$expires_at" && "$expires_at" != "null" ]]; then
+        echo -e "${BOLD}Expires:${NC} $expires_at"
+    fi
+    
+    echo ""
+    case "$status" in
+        "basic")
+            echo -e "${BLUE}⚡ Basic Plan Features:${NC}"
+            echo "  • DBSDK Codespaces access through ioTACTICAL"
+            echo "  • All local DBSDK functionality"
+            echo "  • SBOM generation and security scanning"
+            echo "  • Basic compliance checking"
+            echo "  • Community support"
+            echo ""
+            echo -e "${PURPLE}💡 Premium Features (Coming Soon):${NC}"
+            echo "  • Advanced STIG/NIST compliance tools"
+            echo "  • Code signing and release automation"
+            echo "  • Priority support"
+            echo ""
+            echo "View all plans: ${CYAN}https://iotactical.co/plans${NC}"
+            ;;
+        "premium"|"enterprise")
+            echo -e "${PURPLE}🚀 Premium Plan Features ${YELLOW}[Early Access]:${NC}"
+            echo "  • All Basic features"
+            echo "  • Advanced compliance assessment"
+            echo "  • Priority support (4-hour response)"
+            echo "  • Early access to new features"
+            echo ""
+            echo -e "${YELLOW}Note: Premium features are in development${NC}"
+            echo "Full Premium launch coming Q2 2025"
+            ;;
+        "free")
+            echo -e "${GREEN}Free Plan Features:${NC}"
+            echo "  • Local DBSDK container usage"
+            echo "  • Basic security tools"
+            echo "  • SBOM generation"
+            echo "  • Community support"
+            echo ""
+            echo -e "${BLUE}Upgrade to Basic for:${NC}"
+            echo "  • DBSDK Codespaces access"
+            echo "  • Enhanced development experience"
+            echo "  • Cloud-based environments"
+            echo ""
+            echo -e "${PURPLE}Premium Coming Soon:${NC}"
+            echo "  • Advanced compliance tools"
+            echo "  • Code signing capabilities"
+            echo "  • Enterprise features"
+            echo ""
+            echo "View plans: ${CYAN}https://iotactical.co/plans${NC}"
+            ;;
+        *)
+            echo -e "${YELLOW}Unable to retrieve subscription details${NC}"
+            echo "Contact support@iotactical.co for assistance"
+            ;;
+    esac
+    
+    echo ""
+}
+
+# Show brief subscription info
+show_subscription_info_brief() {
+    local auth_token
+    auth_token=$(cat "$DBSDK_AUTH_TOKEN_FILE" 2>/dev/null || echo "")
+    
+    if [[ -n "$auth_token" ]]; then
+        local subscription_info
+        subscription_info=$(curl -s -m 10 \
+            -H "Authorization: Bearer $auth_token" \
+            -H "User-Agent: DBSDK/${DBSDK_VERSION}" \
+            "$IOTACTICAL_SUBSCRIPTION_ENDPOINT" 2>/dev/null || echo "{}")
+        
+        local status
+        status=$(parse_json "$subscription_info" "status")
+        
+        case "$status" in
+            "basic")
+                echo -e "Your ${BLUE}Basic${NC} subscription is active! ⚡"
+                echo "DBSDK Codespaces and local features are available."
+                ;;
+            "premium"|"enterprise")
+                echo -e "Your ${PURPLE}Premium${NC} subscription is active! 🚀 ${YELLOW}[Early Access]${NC}"
+                echo "All current DBSDK features are available."
+                ;;
+            "free")
+                echo -e "Your ${GREEN}Free${NC} account is active."
+                echo "Upgrade to Basic for Codespaces: ${CYAN}https://iotactical.co/plans${NC}"
+                ;;
+            *)
+                echo "Subscription status: ${status:-Unknown}"
+                ;;
+        esac
+    fi
+}
+
+# Show upgrade information
+show_upgrade_info() {
+    echo -e "${BOLD}${BLUE}ioTACTICAL DBSDK Plans${NC}"
+    echo -e "${BOLD}${BLUE}═══════════════════════${NC}"
+    echo ""
+    
+    echo -e "${GREEN}${BOLD}Free Plan${NC}"
+    echo "  • Local DBSDK container usage"
+    echo "  • Basic security and compliance tools"
+    echo "  • SBOM generation"
+    echo "  • Community support"
+    echo "  • Open source features"
+    echo ""
+    
+    echo -e "${BLUE}${BOLD}Basic Plan - $19/month${NC}"
+    echo "  • Everything in Free"
+    echo -e "  • ${BOLD}DBSDK Codespaces access through ioTACTICAL${NC}"
+    echo "  • Cloud-based development environments"
+    echo "  • Enhanced performance and reliability"
+    echo "  • Email support"
+    echo ""
+    
+    echo -e "${PURPLE}${BOLD}Premium Plan ${YELLOW}[Coming Soon - Q2 2025]${NC}"
+    echo -e "  • Everything in Basic"
+    echo ""
+    echo -e "🔐 ${BOLD}Advanced Security & Compliance${NC}"
+    echo "   • Complete STIG compliance assessment with remediation"
+    echo "   • Full NIST 800-53r5 control mapping and reporting"
+    echo "   • Advanced vulnerability scanning"
+    echo "   • Supply chain security analysis"
+    echo ""
+    echo -e "✍️  ${BOLD}Code Signing & Release Management${NC}"
+    echo "   • Automated code signing with HSMs"
+    echo "   • Release pipeline integration"
+    echo "   • Artifact distribution and verification"
+    echo "   • Digital signature validation"
+    echo ""
+    echo -e "📋 ${BOLD}Compliance & Reporting${NC}"
+    echo "   • Automated ATO documentation generation"
+    echo "   • Risk Management Framework (RMF) support"
+    echo "   • Privacy Impact Assessment (PIA) templates"
+    echo "   • Continuous compliance monitoring"
+    echo ""
+    echo -e "🎯 ${BOLD}Priority Support${NC}"
+    echo "   • 4-hour response time guarantee"
+    echo "   • Direct access to security experts"
+    echo "   • Custom implementation assistance"
+    echo "   • Dedicated account management"
+    echo ""
+    
+    echo -e "${BOLD}Get Started Today:${NC}"
+    echo "  • View all plans: ${CYAN}https://iotactical.co/plans${NC}"
+    echo "  • Start with Basic for Codespaces access"
+    echo "  • Join the Premium waitlist for early access"
+    echo ""
+    
+    echo -e "${BOLD}Questions?${NC}"
+    echo "  • Sales: sales@iotactical.co"
+    echo "  • Support: support@iotactical.co"
+    echo "  • Schedule demo: ${CYAN}https://iotactical.co/demo${NC}"
+    echo ""
+    
+    echo -e "${YELLOW}${BOLD}Premium Early Access Available${NC}"
+    echo "Contact sales@iotactical.co to join the Premium beta program"
+    echo "and help shape the future of defense development tools."
+    echo ""
+}
+
+# Main function
+main() {
+    local command="${1:-status}"
+    shift 2>/dev/null || true
+    
+    case "$command" in
+        "login")
+            handle_login "$@"
+            ;;
+        "logout")
+            handle_logout "$@"
+            ;;
+        "status")
+            show_auth_status "$@"
+            ;;
+        "subscription")
+            show_subscription_info "$@"
+            ;;
+        "upgrade")
+            show_upgrade_info "$@"
+            ;;
+        "help"|"-h"|"--help")
+            show_help
+            ;;
+        *)
+            log_error "Unknown command: $command"
+            echo ""
+            show_help
+            exit 1
+            ;;
+    esac
+}
+
+# Run main function
+main "$@"

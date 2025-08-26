@@ -1,0 +1,366 @@
+#!/bin/bash
+# DBSDK Telemetry Management
+# Control telemetry settings and view privacy information
+
+set -e
+
+# Source utility functions
+DBSDK_BASE_DIR="/opt/dbsdk"
+source "${DBSDK_BASE_DIR}/scripts/dbsdk-lib.sh"
+
+# Telemetry configuration
+TELEMETRY_CONFIG_FILE="${HOME}/.dbsdk/telemetry.conf"
+PRIVACY_POLICY_URL="https://iotactical.co/privacy-policy"
+SUPPORT_EMAIL="support@iotactical.co"
+
+# Show help
+show_help() {
+    echo -e "${BOLD}${BLUE}DBSDK Telemetry Management${NC}"
+    echo -e "${BOLD}${BLUE}═════════════════════════${NC}"
+    echo ""
+    echo -e "${BOLD}USAGE:${NC}"
+    echo "  dbsdk telemetry [OPTIONS]"
+    echo ""
+    echo -e "${BOLD}OPTIONS:${NC}"
+    echo "  --status        Show current telemetry status (default)"
+    echo "  --enable        Enable telemetry collection"
+    echo "  --disable       Disable telemetry collection"
+    echo "  --info          Show detailed telemetry information"
+    echo "  --reset         Reset telemetry settings to default"
+    echo "  --help          Show this help message"
+    echo ""
+    echo -e "${BOLD}EXAMPLES:${NC}"
+    echo "  dbsdk telemetry              # Show current status"
+    echo "  dbsdk telemetry --enable     # Enable telemetry"
+    echo "  dbsdk telemetry --disable    # Disable telemetry"
+    echo "  dbsdk telemetry --info       # Show what we collect"
+    echo ""
+}
+
+# Get current telemetry status
+get_telemetry_status() {
+    # Check environment variable first
+    local env_setting="${DBSDK_TELEMETRY_ENABLED:-}"
+    
+    # Check config file
+    local file_setting=""
+    if [[ -f "$TELEMETRY_CONFIG_FILE" ]]; then
+        file_setting=$(grep "^DBSDK_TELEMETRY_ENABLED=" "$TELEMETRY_CONFIG_FILE" 2>/dev/null | cut -d'=' -f2 || echo "")
+    fi
+    
+    # Environment variable takes precedence
+    if [[ -n "$env_setting" ]]; then
+        echo "$env_setting"
+    elif [[ -n "$file_setting" ]]; then
+        echo "$file_setting"
+    else
+        # Default is enabled
+        echo "true"
+    fi
+}
+
+# Show telemetry status
+show_status() {
+    local status
+    status=$(get_telemetry_status)
+    
+    echo -e "${BOLD}${BLUE}DBSDK Telemetry Status${NC}"
+    echo -e "${BOLD}${BLUE}════════════════════${NC}"
+    echo ""
+    
+    if [[ "$status" == "true" ]]; then
+        echo -e "${BOLD}Status:${NC} ${GREEN}✓ ENABLED${NC}"
+        echo "  Anonymous usage data is being collected to improve DBSDK"
+        echo ""
+        echo -e "${BOLD}Data Collection:${NC}"
+        echo "  • SDK version and configuration"
+        echo "  • Container performance metrics"
+        echo "  • Feature usage analytics (anonymized)"
+        echo "  • Error diagnostics (anonymized)"
+        echo ""
+        echo -e "${BOLD}Endpoint:${NC} ${DBSDK_TELEMETRY_ENDPOINT:-https://telemetry.iotactical.co/api/v1/events}"
+    else
+        echo -e "${BOLD}Status:${NC} ${YELLOW}○ DISABLED${NC}"
+        echo "  No telemetry data is being collected"
+        echo ""
+        echo -e "${BOLD}Impact:${NC}"
+        echo "  • DBSDK will continue to work normally"
+        echo "  • No usage data sent to improve the platform"
+        echo "  • You won't contribute to community insights"
+    fi
+    
+    echo ""
+    echo -e "${BOLD}Configuration Source:${NC}"
+    
+    local env_setting="${DBSDK_TELEMETRY_ENABLED:-}"
+    local file_setting=""
+    if [[ -f "$TELEMETRY_CONFIG_FILE" ]]; then
+        file_setting=$(grep "^DBSDK_TELEMETRY_ENABLED=" "$TELEMETRY_CONFIG_FILE" 2>/dev/null | cut -d'=' -f2 || echo "")
+    fi
+    
+    if [[ -n "$env_setting" ]]; then
+        echo "  Environment Variable: DBSDK_TELEMETRY_ENABLED=$env_setting"
+    fi
+    
+    if [[ -n "$file_setting" ]]; then
+        echo "  Config File: $file_setting (${TELEMETRY_CONFIG_FILE})"
+    fi
+    
+    if [[ -z "$env_setting" && -z "$file_setting" ]]; then
+        echo "  Default: enabled (no explicit configuration)"
+    fi
+    
+    echo ""
+    echo -e "${BOLD}Actions:${NC}"
+    if [[ "$status" == "true" ]]; then
+        echo "  Run: ${BOLD}dbsdk telemetry --disable${NC} to opt out"
+    else
+        echo "  Run: ${BOLD}dbsdk telemetry --enable${NC} to opt in"
+    fi
+    echo "  Run: ${BOLD}dbsdk telemetry --info${NC} for detailed information"
+}
+
+# Show detailed telemetry information
+show_telemetry_info() {
+    # Reuse the telemetry disclosure script but with different formatting
+    echo -e "${BOLD}${BLUE}DBSDK Telemetry Information${NC}"
+    echo -e "${BOLD}${BLUE}═════════════════════════${NC}"
+    echo ""
+    
+    echo -e "${BOLD}Our Privacy-First Approach:${NC}"
+    echo "DBSDK collects anonymous telemetry to improve the platform for the"
+    echo "entire defense development community. We are committed to transparency"
+    echo "and privacy in everything we collect."
+    echo ""
+    
+    echo -e "${BOLD}${GREEN}What We Collect (Anonymous):${NC}"
+    echo "  • SDK version and configuration details"
+    echo "  • Container performance metrics (CPU, memory usage)"
+    echo "  • Feature usage analytics (which tools are used)"
+    echo "  • Error diagnostics (crash reports, anonymized)"
+    echo "  • System specifications (OS version, architecture)"
+    echo "  • Session information (start/stop times, duration)"
+    echo ""
+    
+    echo -e "${BOLD}${RED}What We NEVER Collect:${NC}"
+    echo "  • Source code content or project files"
+    echo "  • Personal information or identifiable data"
+    echo "  • Proprietary business information"
+    echo "  • Project names, paths, or structure"
+    echo "  • Passwords, keys, or sensitive credentials"
+    echo "  • Network traffic or communication content"
+    echo ""
+    
+    echo -e "${BOLD}How We Use This Data:${NC}"
+    echo "  • Identify and fix bugs in DBSDK"
+    echo "  • Understand which features are most valuable"
+    echo "  • Improve performance and reliability"
+    echo "  • Guide future development priorities"
+    echo "  • Create better documentation and tutorials"
+    echo ""
+    
+    echo -e "${BOLD}Data Transmission:${NC}"
+    echo "  • Endpoint: https://telemetry.iotactical.co/api/v1/events"
+    echo "  • Encrypted in transit (HTTPS/TLS)"
+    echo "  • Anonymous session identifiers only"
+    echo "  • No cross-session tracking"
+    echo ""
+    
+    echo -e "${BOLD}Your Rights:${NC}"
+    echo "  • Opt out at any time (no questions asked)"
+    echo "  • Request data deletion: ${SUPPORT_EMAIL}"
+    echo "  • Review our privacy policy: ${PRIVACY_POLICY_URL}"
+    echo "  • Contact us with concerns: ${SUPPORT_EMAIL}"
+    echo ""
+    
+    local current_status
+    current_status=$(get_telemetry_status)
+    echo -e "${BOLD}Current Status:${NC}"
+    if [[ "$current_status" == "true" ]]; then
+        echo -e "  ${GREEN}✓ Telemetry ENABLED${NC} - Thank you for helping improve DBSDK!"
+    else
+        echo -e "  ${YELLOW}○ Telemetry DISABLED${NC} - Your privacy choice is respected"
+    fi
+    echo ""
+}
+
+# Enable telemetry
+enable_telemetry() {
+    log_info "Enabling DBSDK telemetry..."
+    
+    ensure_config_dir
+    
+    # Update config file
+    if [[ -f "$TELEMETRY_CONFIG_FILE" ]]; then
+        # Update existing file
+        if grep -q "^DBSDK_TELEMETRY_ENABLED=" "$TELEMETRY_CONFIG_FILE"; then
+            sed -i 's/^DBSDK_TELEMETRY_ENABLED=.*/DBSDK_TELEMETRY_ENABLED=true/' "$TELEMETRY_CONFIG_FILE"
+        else
+            echo "DBSDK_TELEMETRY_ENABLED=true" >> "$TELEMETRY_CONFIG_FILE"
+        fi
+    else
+        # Create new config file
+        cat > "$TELEMETRY_CONFIG_FILE" <<EOF
+# DBSDK Telemetry Configuration
+# Generated on $(date)
+DBSDK_TELEMETRY_ENABLED=true
+EOF
+        chmod 600 "$TELEMETRY_CONFIG_FILE"
+    fi
+    
+    echo ""
+    log_success "Telemetry has been enabled"
+    echo ""
+    echo -e "${BOLD}What happens now:${NC}"
+    echo "  • Anonymous usage data will be collected"
+    echo "  • Data helps improve DBSDK for everyone"
+    echo "  • You can disable anytime with: ${BOLD}dbsdk telemetry --disable${NC}"
+    echo ""
+    echo -e "${BOLD}Privacy:${NC}"
+    echo "  • Review our privacy policy: ${CYAN}${PRIVACY_POLICY_URL}${NC}"
+    echo "  • Questions? Contact: ${CYAN}${SUPPORT_EMAIL}${NC}"
+    echo ""
+    
+    # Show current environment status
+    if [[ "${DBSDK_TELEMETRY_ENABLED:-}" == "false" ]]; then
+        log_warning "Environment variable DBSDK_TELEMETRY_ENABLED=false will override this setting"
+        echo "Remove the environment variable for this change to take effect."
+    fi
+    
+    log_success "Thank you for supporting the DBSDK community!"
+}
+
+# Disable telemetry
+disable_telemetry() {
+    log_info "Disabling DBSDK telemetry..."
+    
+    ensure_config_dir
+    
+    # Update config file
+    if [[ -f "$TELEMETRY_CONFIG_FILE" ]]; then
+        # Update existing file
+        if grep -q "^DBSDK_TELEMETRY_ENABLED=" "$TELEMETRY_CONFIG_FILE"; then
+            sed -i 's/^DBSDK_TELEMETRY_ENABLED=.*/DBSDK_TELEMETRY_ENABLED=false/' "$TELEMETRY_CONFIG_FILE"
+        else
+            echo "DBSDK_TELEMETRY_ENABLED=false" >> "$TELEMETRY_CONFIG_FILE"
+        fi
+    else
+        # Create new config file
+        cat > "$TELEMETRY_CONFIG_FILE" <<EOF
+# DBSDK Telemetry Configuration
+# Generated on $(date)
+DBSDK_TELEMETRY_ENABLED=false
+EOF
+        chmod 600 "$TELEMETRY_CONFIG_FILE"
+    fi
+    
+    echo ""
+    log_success "Telemetry has been disabled"
+    echo ""
+    echo -e "${BOLD}What this means:${NC}"
+    echo "  • No usage data will be collected"
+    echo "  • DBSDK will continue to work normally"
+    echo "  • Your privacy preference is respected"
+    echo ""
+    echo -e "${BOLD}Re-enabling:${NC}"
+    echo "  • Run: ${BOLD}dbsdk telemetry --enable${NC} to opt back in"
+    echo "  • Or set: ${BOLD}export DBSDK_TELEMETRY_ENABLED=true${NC}"
+    echo ""
+    
+    # Show current environment status
+    if [[ "${DBSDK_TELEMETRY_ENABLED:-}" == "true" ]]; then
+        log_warning "Environment variable DBSDK_TELEMETRY_ENABLED=true will override this setting"
+        echo "Remove the environment variable for this change to take effect."
+    fi
+}
+
+# Reset telemetry settings
+reset_telemetry() {
+    log_info "Resetting telemetry settings to defaults..."
+    
+    if [[ -f "$TELEMETRY_CONFIG_FILE" ]]; then
+        rm "$TELEMETRY_CONFIG_FILE"
+        log_success "Removed telemetry configuration file"
+    else
+        log_info "No telemetry configuration file to remove"
+    fi
+    
+    echo ""
+    echo -e "${BOLD}Telemetry settings reset:${NC}"
+    echo "  • Configuration file removed"
+    echo "  • Default behavior: telemetry enabled"
+    echo "  • Environment variables still take precedence"
+    echo ""
+    
+    if [[ -n "${DBSDK_TELEMETRY_ENABLED:-}" ]]; then
+        echo -e "${BOLD}Current environment override:${NC}"
+        echo "  DBSDK_TELEMETRY_ENABLED=${DBSDK_TELEMETRY_ENABLED}"
+        echo "  Remove this variable to use defaults"
+    fi
+    
+    log_success "Reset complete"
+}
+
+# Main function
+main() {
+    local action="status"
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            "--status")
+                action="status"
+                shift
+                ;;
+            "--enable")
+                action="enable"
+                shift
+                ;;
+            "--disable")
+                action="disable"
+                shift
+                ;;
+            "--info")
+                action="info"
+                shift
+                ;;
+            "--reset")
+                action="reset"
+                shift
+                ;;
+            "--help"|"-h")
+                show_help
+                exit 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+    
+    case "$action" in
+        "status")
+            show_status
+            ;;
+        "enable")
+            enable_telemetry
+            ;;
+        "disable")
+            disable_telemetry
+            ;;
+        "info")
+            show_telemetry_info
+            ;;
+        "reset")
+            reset_telemetry
+            ;;
+        *)
+            log_error "Unknown action: $action"
+            exit 1
+            ;;
+    esac
+}
+
+# Run main function
+main "$@"

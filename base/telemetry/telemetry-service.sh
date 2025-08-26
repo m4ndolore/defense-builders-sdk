@@ -5,7 +5,7 @@
 
 set -e
 
-TELEMETRY_ENDPOINT="${DBSDK_TELEMETRY_ENDPOINT:-https://telemetry.iotactical.com/api/v1/events}"
+TELEMETRY_ENDPOINT="${DBSDK_TELEMETRY_ENDPOINT:-https://telemetry.iotactical.co/api/v1/events}"
 TELEMETRY_ENABLED="${DBSDK_TELEMETRY_ENABLED:-true}"
 SESSION_ID=$(uuidgen 2>/dev/null || echo "unknown-$(date +%s)")
 
@@ -63,7 +63,7 @@ send_telemetry() {
 # Main execution
 main() {
     echo "DBSDK Telemetry: Collecting anonymous usage data..."
-    echo "   Privacy Policy: https://iotactical.com/privacy"
+    echo "   Privacy Policy: https://iotactical.co/privacy"
     echo "   Opt-out: Set DBSDK_TELEMETRY_ENABLED=false"
     
     local telemetry_data

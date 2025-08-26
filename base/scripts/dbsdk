@@ -1,0 +1,155 @@
+#!/bin/bash
+# DBSDK Command Line Utility
+# Comprehensive tooling for Defense Builders SDK
+
+set -e
+
+# Version information
+DBSDK_UTIL_VERSION="1.0.0"
+DBSDK_BASE_DIR="/opt/dbsdk"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# Source utility functions
+source "${DBSDK_BASE_DIR}/scripts/dbsdk-lib.sh" 2>/dev/null || true
+
+# Show help
+show_help() {
+    echo -e "${BOLD}${BLUE}DBSDK Command Line Utility v${DBSDK_UTIL_VERSION}${NC}"
+    echo -e "${BOLD}Defense development tooling for secure, compliant environments${NC}"
+    echo ""
+    echo -e "${BOLD}USAGE:${NC}"
+    echo "  dbsdk [COMMAND] [OPTIONS]"
+    echo ""
+    echo -e "${BOLD}COMMANDS:${NC}"
+    echo ""
+    echo -e "  ${BOLD}${GREEN}info${NC}          Show DBSDK environment information"
+    echo -e "  ${BOLD}${GREEN}sbom${NC}          Software Bill of Materials management"
+    echo -e "  ${BOLD}${GREEN}telemetry${NC}     Manage telemetry settings"
+    echo -e "  ${BOLD}${GREEN}compliance${NC}    Assess STIG/NIST 800-53r5 posture"
+    echo ""
+    echo -e "  ${BOLD}${PURPLE}account${NC}       ioTACTICAL account management ${YELLOW}[Premium]${NC}"
+    echo -e "  ${BOLD}${PURPLE}sign${NC}          Code signing and verification ${YELLOW}[Premium]${NC}"
+    echo -e "  ${BOLD}${PURPLE}release${NC}       Automated release management ${YELLOW}[Premium]${NC}"
+    echo ""
+    echo -e "  ${BOLD}version${NC}       Show version information"
+    echo -e "  ${BOLD}help${NC}          Show this help message"
+    echo ""
+    echo -e "${BOLD}EXAMPLES:${NC}"
+    echo "  dbsdk info                    # Show environment details"
+    echo "  dbsdk sbom --export           # Export SBOM to file"
+    echo "  dbsdk telemetry --status      # Check telemetry status"
+    echo "  dbsdk compliance --assess     # Run compliance assessment"
+    echo ""
+    echo -e "${BOLD}SUPPORT:${NC}"
+    echo "  • Documentation: https://docs.iotactical.co"
+    echo "  • Support: support@iotactical.co"
+    echo "  • Premium Features: https://iotactical.co/premium"
+    echo ""
+}
+
+# Show version information
+show_version() {
+    echo -e "${BOLD}DBSDK Utility Version:${NC} ${DBSDK_UTIL_VERSION}"
+    echo -e "${BOLD}DBSDK Base Version:${NC} ${DBSDK_VERSION:-unknown}"
+    echo -e "${BOLD}SDK Type:${NC} ${DBSDK_SDK_TYPE:-unknown}"
+    echo -e "${BOLD}SDK Version:${NC} ${DBSDK_SDK_VERSION:-unknown}"
+    echo -e "${BOLD}Git SHA:${NC} ${DBSDK_GIT_SHA:-unknown}"
+    echo -e "${BOLD}Build Date:${NC} ${DBSDK_BUILD_DATE:-unknown}"
+}
+
+# Show environment information
+show_info() {
+    echo -e "${BOLD}${BLUE}DBSDK Environment Information${NC}"
+    echo -e "${BOLD}${BLUE}════════════════════════════${NC}"
+    echo ""
+    
+    show_version
+    echo ""
+    
+    echo -e "${BOLD}Container Information:${NC}"
+    echo -e "  OS: $(lsb_release -ds 2>/dev/null || echo 'Unknown')"
+    echo -e "  Kernel: $(uname -r)"
+    echo -e "  Architecture: $(uname -m)"
+    echo -e "  User: $(whoami)"
+    echo -e "  Workspace: $(pwd)"
+    echo ""
+    
+    echo -e "${BOLD}Available Tools:${NC}"
+    echo -e "  Git: $(git --version | cut -d' ' -f3)"
+    echo -e "  Docker: $(docker --version 2>/dev/null | cut -d' ' -f3 | sed 's/,//' || echo 'Not available')"
+    echo -e "  Java: $(java -version 2>&1 | head -n1 | cut -d'"' -f2 2>/dev/null || echo 'Not available')"
+    echo ""
+    
+    echo -e "${BOLD}SBOM Status:${NC}"
+    if [[ -f "${DBSDK_BASE_DIR}/sbom.json" ]]; then
+        echo -e "  ${GREEN}✓${NC} SBOM available"
+        echo -e "    Run: ${BOLD}dbsdk sbom${NC} to view"
+    else
+        echo -e "  ${YELLOW}!${NC} SBOM not found"
+    fi
+    echo ""
+    
+    echo -e "${BOLD}Telemetry Status:${NC}"
+    local telemetry_status="${DBSDK_TELEMETRY_ENABLED:-true}"
+    if [[ "$telemetry_status" == "true" ]]; then
+        echo -e "  ${GREEN}✓${NC} Enabled (helping improve DBSDK)"
+    else
+        echo -e "  ${YELLOW}○${NC} Disabled"
+    fi
+    echo -e "    Run: ${BOLD}dbsdk telemetry${NC} to manage"
+    echo ""
+}
+
+# Main command dispatcher
+main() {
+    local command="${1:-help}"
+    shift 2>/dev/null || true
+    
+    case "$command" in
+        "info")
+            show_info "$@"
+            ;;
+        "sbom")
+            "${DBSDK_BASE_DIR}/scripts/dbsdk-sbom" "$@"
+            ;;
+        "telemetry")
+            "${DBSDK_BASE_DIR}/scripts/dbsdk-telemetry" "$@"
+            ;;
+        "compliance")
+            "${DBSDK_BASE_DIR}/scripts/dbsdk-compliance" "$@"
+            ;;
+        "account")
+            "${DBSDK_BASE_DIR}/scripts/dbsdk-account" "$@"
+            ;;
+        "sign")
+            "${DBSDK_BASE_DIR}/scripts/dbsdk-sign" "$@"
+            ;;
+        "release")
+            "${DBSDK_BASE_DIR}/scripts/dbsdk-release" "$@"
+            ;;
+        "version")
+            show_version
+            ;;
+        "help"|"-h"|"--help")
+            show_help
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown command '${command}'${NC}" >&2
+            echo ""
+            show_help
+            exit 1
+            ;;
+    esac
+}
+
+# Run main function
+main "$@"

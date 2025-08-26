@@ -16,7 +16,7 @@ cat > "$SBOM_FILE" <<EOF
     "dataLicense": "CC0-1.0",
     "SPDXID": "SPDXRef-DOCUMENT",
     "name": "Defense Builders SDK SBOM",
-    "documentNamespace": "https://iotactical.com/sbom/${DBSDK_GIT_SHA:-unknown}",
+    "documentNamespace": "https://iotactical.co/sbom/${DBSDK_GIT_SHA:-unknown}",
     "creationInfo": {
         "created": "$BUILD_TIME",
         "creators": ["Tool: DBSDK-SBOM-Generator"],
