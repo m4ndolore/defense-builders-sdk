@@ -318,11 +318,7 @@ jobs:
           echo "No documentation changes to commit"
         else
           git add VERSION_MATRIX.md
-          git commit -m "Update version matrix after successful build
-
-Versions built: ${{ needs.discover-versions.outputs.versions }}
-
-🤖 Auto-updated by DBSDK pipeline"
+          git commit -m "Update version matrix after successful build - Versions: ${{ needs.discover-versions.outputs.versions }} - 🤖 Auto-updated by DBSDK pipeline"
           git push
         fi
 
