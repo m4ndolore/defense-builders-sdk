@@ -53,9 +53,9 @@ RUN groupadd -g 1000 vscode && \
 RUN mkdir -p /workspaces && chown -R vscode:vscode /workspaces
 
 # Install DBSDK telemetry and security tools
-COPY telemetry/ /opt/dbsdk/telemetry/
-COPY security/ /opt/dbsdk/security/
-COPY scripts/ /opt/dbsdk/scripts/
+COPY base/telemetry/ /opt/dbsdk/telemetry/
+COPY base/security/ /opt/dbsdk/security/
+COPY base/scripts/ /opt/dbsdk/scripts/
 
 # Make scripts executable
 RUN chmod +x /opt/dbsdk/scripts/* && \
