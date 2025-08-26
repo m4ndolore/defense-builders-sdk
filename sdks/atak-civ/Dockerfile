@@ -24,13 +24,21 @@ RUN apt-get update && apt-get install -y \
     # Android development dependencies  
     lib32stdc++6 \
     lib32z1 \
+    libc6-i386 \
     # Build tools
-    gradle \
     maven \
     # Additional utilities
     unzip \
+    wget \
+    zip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Gradle manually (more reliable than apt package)
+RUN wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O gradle.zip \
+    && unzip -q gradle.zip -d /opt \
+    && rm gradle.zip \
+    && ln -s /opt/gradle-8.5/bin/gradle /usr/local/bin/gradle
 
 # Download and install Android SDK
 RUN mkdir -p $ANDROID_HOME/cmdline-tools && \
