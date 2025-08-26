@@ -1,0 +1,358 @@
+name: Build Versioned ATAK-CIV SDKs
+
+on:
+  push:
+    branches: [ main ]
+    paths: 
+      - 'sdks/atak-civ/**'
+      - 'base/**'
+      - 'scripts/**'
+  pull_request:
+    branches: [ main ]
+    paths: 
+      - 'sdks/atak-civ/**'
+      - 'base/**'
+      - 'scripts/**'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Specific SDK version to build (leave empty for all)'
+        required: false
+        type: string
+      sync_repos:
+        description: 'Sync SDK repositories after build'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  REGISTRY: ghcr.io
+  REGISTRY_USER: ${{ github.actor }}
+  REGISTRY_PASSWORD: ${{ github.token }}
+
+jobs:
+  discover-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.versions.outputs.versions }}
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Discover SDK versions
+      id: versions
+      run: |
+        # In production, this would scan for actual SDK files
+        # For now, using the known versions from the repository structure
+        VERSIONS='["5.3.0.12","5.4.0.21","5.5.0.5"]'
+        echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
+        echo "Discovered versions: $VERSIONS"
+        
+        # Filter by input version if specified
+        if [[ -n "${{ github.event.inputs.version }}" ]]; then
+          INPUT_VERSION="${{ github.event.inputs.version }}"
+          if echo "$VERSIONS" | grep -q "\"$INPUT_VERSION\""; then
+            VERSIONS="[\"$INPUT_VERSION\"]"
+            echo "Filtered to input version: $VERSIONS"
+          else
+            echo "::error::Version $INPUT_VERSION not found in available versions"
+            exit 1
+          fi
+          echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
+        fi
+
+  build-base:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    outputs:
+      base-digest: ${{ steps.build.outputs.digest }}
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ env.REGISTRY_USER }}
+        password: ${{ env.REGISTRY_PASSWORD }}
+    
+    - name: Build and push base image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./base/Dockerfile
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: |
+          ${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-base:latest
+          ${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-base:${{ github.sha }}
+        build-args: |
+          BUILD_DATE=${{ github.run_id }}
+          GIT_SHA=${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Run Trivy vulnerability scanner on base image
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-base:latest
+        format: 'sarif'
+        output: 'trivy-results-base-${{ github.sha }}.sarif'
+    
+    - name: Upload Trivy scan results for base image
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results-base-${{ github.sha }}.sarif'
+        category: 'trivy-base'
+
+  build-versioned-sdks:
+    needs: [discover-versions, build-base]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON(needs.discover-versions.outputs.versions) }}
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ env.REGISTRY_USER }}
+        password: ${{ env.REGISTRY_PASSWORD }}
+    
+    - name: Create SDK placeholder (production would download real SDK)
+      env:
+        VERSION: ${{ matrix.version }}
+      run: |
+        # In production, this would download the actual SDK from secure storage
+        # For CI, create a placeholder structure
+        mkdir -p "sdks/atak-civ/v${VERSION}"
+        
+        # Create a minimal placeholder ZIP structure
+        temp_dir=$(mktemp -d)
+        sdk_dir="$temp_dir/ATAK-CIV-${VERSION}-SDK"
+        mkdir -p "$sdk_dir"/{docs,license}
+        
+        # Create placeholder files with realistic sizes (but empty content for CI)
+        touch "$sdk_dir/main.jar"
+        touch "$sdk_dir/atak.apk" 
+        touch "$sdk_dir/atak-javadoc.jar"
+        touch "$sdk_dir/android_keystore"
+        touch "$sdk_dir/android-formatting.prefs"
+        touch "$sdk_dir/android-formatting.xml"
+        
+        # Add proguard file for newer versions
+        case "${VERSION}" in
+          "5.4.0.21"|"5.5.0.5")
+            touch "$sdk_dir/proguard-release-keep.txt"
+            ;;
+        esac
+        
+        # Create placeholder docs and licenses
+        touch "$sdk_dir/docs/BROADCAST.txt"
+        touch "$sdk_dir/license/commoncommo.txt"
+        
+        # Package into ZIP
+        cd "$temp_dir"
+        zip -r "ATAK-CIV-${VERSION}-SDK.zip" "ATAK-CIV-${VERSION}-SDK/"
+        
+        # Move to build context
+        mv "ATAK-CIV-${VERSION}-SDK.zip" "${GITHUB_WORKSPACE}/sdks/atak-civ/v${VERSION}/"
+        
+        echo "Created placeholder SDK for version ${VERSION}"
+    
+    - name: Generate version-specific Dockerfile
+      env:
+        VERSION: ${{ matrix.version }}
+      run: |
+        ./scripts/build-versioned-containers.sh generate-dockerfile ${VERSION}
+        
+        # Verify Dockerfile was created
+        if [[ ! -f "sdks/atak-civ/Dockerfile.v${VERSION}" ]]; then
+          echo "::error::Failed to generate Dockerfile for version ${VERSION}"
+          exit 1
+        fi
+        
+        echo "Generated Dockerfile for version ${VERSION}"
+    
+    - name: Build and push SDK image
+      uses: docker/build-push-action@v5
+      env:
+        VERSION: ${{ matrix.version }}
+      with:
+        context: .
+        file: ./sdks/atak-civ/Dockerfile.v${{ matrix.version }}
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: |
+          ${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-atak-civ:${{ matrix.version }}
+        build-args: |
+          BUILD_DATE=${{ github.run_id }}
+          GIT_SHA=${{ github.sha }}
+          SDK_VERSION=${{ matrix.version }}
+        cache-from: type=gha,scope=${{ matrix.version }}
+        cache-to: type=gha,mode=max,scope=${{ matrix.version }}
+    
+    - name: Tag latest version
+      if: matrix.version == '5.5.0.5'
+      run: |
+        docker buildx imagetools create \
+          ${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-atak-civ:${{ matrix.version }} \
+          --tag ${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-atak-civ:latest
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-atak-civ:${{ matrix.version }}
+        format: 'sarif'
+        output: 'trivy-results-atak-civ-${{ matrix.version }}-${{ github.sha }}.sarif'
+    
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results-atak-civ-${{ matrix.version }}-${{ github.sha }}.sarif'
+        category: 'trivy-atak-civ-${{ matrix.version }}'
+    
+    - name: Generate SBOM
+      uses: anchore/sbom-action@v0
+      with:
+        image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-atak-civ:${{ matrix.version }}
+        format: spdx-json
+        output-file: sbom-atak-civ-${{ matrix.version }}.spdx.json
+    
+    - name: Upload SBOM artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: sbom-atak-civ-${{ matrix.version }}
+        path: sbom-atak-civ-${{ matrix.version }}.spdx.json
+        retention-days: 90
+        compression-level: 6
+    
+    - name: Clean up version-specific files
+      if: always()
+      run: |
+        rm -f "sdks/atak-civ/Dockerfile.v${{ matrix.version }}"
+        rm -rf "sdks/atak-civ/v${{ matrix.version }}"
+
+  sync-repositories:
+    needs: [discover-versions, build-versioned-sdks]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.sync_repos == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON(needs.discover-versions.outputs.versions) }}
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Git
+      run: |
+        git config --global user.name "DBSDK Bot"
+        git config --global user.email "bot@iotactical.co"
+    
+    - name: Simulate repository sync
+      env:
+        VERSION: ${{ matrix.version }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        echo "Would sync ATAK-CIV-${VERSION}-SDK repository"
+        echo "Target branch: atak-civ-${VERSION}"
+        echo "Container image: ghcr.io/${{ github.repository_owner }}/dbsdk-atak-civ:${VERSION}"
+        
+        # In production, this would run:
+        # ./scripts/sdk-sync.sh sync ${VERSION}
+        
+        echo "✓ Repository sync simulated for version ${VERSION}"
+
+  update-documentation:
+    needs: [discover-versions, build-versioned-sdks]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Update README with version matrix
+      run: |
+        versions='${{ needs.discover-versions.outputs.versions }}'
+        echo "Available ATAK-CIV SDK versions: $versions"
+        
+        # Generate version table for README
+        cat > VERSION_MATRIX.md << EOF
+        # DBSDK Version Matrix
+        
+        | SDK Version | Container Image | Status |
+        |--------------|-----------------|--------|
+        EOF
+        
+        echo "$versions" | jq -r '.[]' | while read version; do
+          echo "| v${version} | \`ghcr.io/${{ github.repository_owner }}/dbsdk-atak-civ:${version}\` | ✅ Active |" >> VERSION_MATRIX.md
+        done
+        
+        echo "Generated version matrix"
+        cat VERSION_MATRIX.md
+    
+    - name: Commit documentation updates
+      run: |
+        if git diff --quiet; then
+          echo "No documentation changes to commit"
+        else
+          git add VERSION_MATRIX.md
+          git commit -m "Update version matrix after successful build
+
+Versions built: ${{ needs.discover-versions.outputs.versions }}
+
+🤖 Auto-updated by DBSDK pipeline"
+          git push
+        fi
+
+  report-results:
+    needs: [discover-versions, build-base, build-versioned-sdks, sync-repositories]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+    - name: Report build results
+      run: |
+        echo "## DBSDK Build Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "**Versions processed**: ${{ needs.discover-versions.outputs.versions }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Base image**: ${{ needs.build-base.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "**SDK images**: ${{ needs.build-versioned-sdks.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Repository sync**: ${{ needs.sync-repositories.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ "${{ needs.build-versioned-sdks.result }}" == "success" ]]; then
+          echo "✅ **All SDK versions built successfully**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Available images:" >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.discover-versions.outputs.versions }}" | jq -r '.[]' | while read version; do
+            echo "- \`ghcr.io/${{ github.repository_owner }}/dbsdk-atak-civ:${version}\`" >> $GITHUB_STEP_SUMMARY
+          done
+        else
+          echo "❌ **Some builds failed - check job logs**" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Artifacts generated**: SBOM files for each version" >> $GITHUB_STEP_SUMMARY
+        echo "**Security scans**: Trivy vulnerability reports uploaded to Security tab" >> $GITHUB_STEP_SUMMARY

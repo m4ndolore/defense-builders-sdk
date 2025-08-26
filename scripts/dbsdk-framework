@@ -1,0 +1,255 @@
+#!/bin/bash
+# DBSDK Framework CLI
+# Command-line interface for the Defense Builders SDK Framework
+# https://github.com/iotactical/defense-builders-sdk
+
+set -e
+
+# Script directory and framework library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+FRAMEWORK_LIB="$REPO_ROOT/lib/sdk-framework.sh"
+
+# Check if framework library exists and source it
+if [[ ! -f "$FRAMEWORK_LIB" ]]; then
+    echo "Error: Framework library not found: $FRAMEWORK_LIB" >&2
+    exit 1
+fi
+
+source "$FRAMEWORK_LIB"
+
+# CLI Colors
+BOLD='\033[1m'
+NC='\033[0m'
+
+# Show help
+show_help() {
+    cat << EOF
+${BOLD}DBSDK Framework CLI${NC}
+Abstract SDK Management System
+
+${BOLD}USAGE:${NC}
+    dbsdk-framework COMMAND [OPTIONS]
+
+${BOLD}FRAMEWORK COMMANDS:${NC}
+    info                    Show framework information
+    health                  Run framework health check
+    list-sdks              List registered SDK types
+    register SDK CONFIG     Register new SDK type
+    validate CONFIG         Validate SDK configuration file
+
+${BOLD}SDK MANAGEMENT:${NC}
+    discover SDK_TYPE       Discover versions for SDK type
+    build SDK_TYPE VERSION  Build container for specific SDK version
+    build-all SDK_TYPE      Build all available versions for SDK type
+    create-repo SDK_TYPE VERSION REPO BRANCH  Create repository structure
+
+${BOLD}EXAMPLES:${NC}
+    # Framework operations
+    dbsdk-framework info
+    dbsdk-framework health
+    dbsdk-framework list-sdks
+    
+    # ATAK-CIV SDK operations
+    dbsdk-framework discover atak-civ
+    dbsdk-framework build atak-civ 5.5.0.5
+    dbsdk-framework build-all atak-civ
+    
+    # Repository management
+    dbsdk-framework create-repo atak-civ 5.5.0.5 ATAK-CIV-5.5.0.5-SDK atak-civ-5.5.0.5
+
+${BOLD}OPTIONS:${NC}
+    -h, --help             Show this help message
+    -v, --verbose          Enable verbose output
+    --debug               Enable debug output
+
+${BOLD}ENVIRONMENT VARIABLES:${NC}
+    DBSDK_DEBUG           Enable debug logging (true/false)
+    DBSDK_CONFIG_DIR      Framework configuration directory
+    DBSDK_DATA_DIR        Framework data directory
+    DBSDK_TEMP_DIR        Temporary directory for operations
+
+${BOLD}CONFIGURATION:${NC}
+    Framework config: \$DBSDK_CONFIG_DIR/framework.conf
+    SDK configurations: \$DBSDK_CONFIG_DIR/sdk-configs/*.conf
+EOF
+}
+
+# Process command-line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -v|--verbose)
+            export DBSDK_VERBOSE=true
+            shift
+            ;;
+        --debug)
+            export DBSDK_DEBUG=true
+            shift
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+# Main command processing
+main() {
+    local command="$1"
+    shift || true
+    
+    case "$command" in
+        "info")
+            framework_info
+            ;;
+        "health")
+            framework_health_check
+            ;;
+        "list-sdks")
+            list_sdk_types
+            ;;
+        "register")
+            local sdk_type="$1"
+            local config_file="$2"
+            
+            if [[ -z "$sdk_type" || -z "$config_file" ]]; then
+                framework_log_error "SDK type and configuration file required"
+                echo "Usage: dbsdk-framework register SDK_TYPE CONFIG_FILE"
+                exit 1
+            fi
+            
+            if validate_sdk_config "$config_file"; then
+                register_sdk_type "$sdk_type" "$config_file"
+            else
+                framework_log_error "Failed to register SDK type: validation failed"
+                exit 1
+            fi
+            ;;
+        "validate")
+            local config_file="$1"
+            
+            if [[ -z "$config_file" ]]; then
+                framework_log_error "Configuration file required"
+                echo "Usage: dbsdk-framework validate CONFIG_FILE"
+                exit 1
+            fi
+            
+            validate_sdk_config "$config_file"
+            ;;
+        "discover")
+            local sdk_type="$1"
+            
+            if [[ -z "$sdk_type" ]]; then
+                framework_log_error "SDK type required"
+                echo "Usage: dbsdk-framework discover SDK_TYPE"
+                exit 1
+            fi
+            
+            framework_log_info "Discovering versions for SDK type: $sdk_type"
+            if discover_sdk_versions "$sdk_type"; then
+                framework_log_success "Version discovery completed"
+            else
+                framework_log_error "Version discovery failed"
+                exit 1
+            fi
+            ;;
+        "build")
+            local sdk_type="$1"
+            local version="$2"
+            shift 2 || true
+            local extra_args=("$@")
+            
+            if [[ -z "$sdk_type" || -z "$version" ]]; then
+                framework_log_error "SDK type and version required"
+                echo "Usage: dbsdk-framework build SDK_TYPE VERSION [EXTRA_ARGS...]"
+                exit 1
+            fi
+            
+            if build_sdk_container "$sdk_type" "$version" "${extra_args[@]}"; then
+                framework_log_success "Container build completed successfully"
+            else
+                framework_log_error "Container build failed"
+                exit 1
+            fi
+            ;;
+        "build-all")
+            local sdk_type="$1"
+            shift || true
+            local extra_args=("$@")
+            
+            if [[ -z "$sdk_type" ]]; then
+                framework_log_error "SDK type required"
+                echo "Usage: dbsdk-framework build-all SDK_TYPE [EXTRA_ARGS...]"
+                exit 1
+            fi
+            
+            framework_log_info "Building all versions for SDK type: $sdk_type"
+            
+            # Discover versions
+            local versions
+            mapfile -t versions < <(discover_sdk_versions "$sdk_type")
+            
+            if [[ ${#versions[@]} -eq 0 ]]; then
+                framework_log_error "No versions found for SDK type: $sdk_type"
+                exit 1
+            fi
+            
+            framework_log_info "Found ${#versions[@]} versions: ${versions[*]}"
+            
+            local failed_builds=()
+            for version in "${versions[@]}"; do
+                framework_log_info "Building version: $version"
+                if build_sdk_container "$sdk_type" "$version" "${extra_args[@]}"; then
+                    framework_log_success "Built version: $version"
+                else
+                    framework_log_warn "Failed to build version: $version"
+                    failed_builds+=("$version")
+                fi
+            done
+            
+            # Report results
+            local success_count=$((${#versions[@]} - ${#failed_builds[@]}))
+            framework_log_success "Successfully built ${success_count}/${#versions[@]} versions"
+            
+            if [[ ${#failed_builds[@]} -gt 0 ]]; then
+                framework_log_warn "Failed versions: ${failed_builds[*]}"
+                exit 1
+            fi
+            ;;
+        "create-repo")
+            local sdk_type="$1"
+            local version="$2"
+            local repo_name="$3"
+            local branch_name="$4"
+            
+            if [[ -z "$sdk_type" || -z "$version" || -z "$repo_name" || -z "$branch_name" ]]; then
+                framework_log_error "All parameters required: SDK_TYPE VERSION REPO_NAME BRANCH_NAME"
+                echo "Usage: dbsdk-framework create-repo SDK_TYPE VERSION REPO_NAME BRANCH_NAME"
+                exit 1
+            fi
+            
+            if create_sdk_repository "$sdk_type" "$version" "$repo_name" "$branch_name"; then
+                framework_log_success "Repository structure created successfully"
+            else
+                framework_log_error "Repository creation failed"
+                exit 1
+            fi
+            ;;
+        "")
+            framework_log_error "Command required"
+            show_help
+            exit 1
+            ;;
+        *)
+            framework_log_error "Unknown command: $command"
+            show_help
+            exit 1
+            ;;
+    esac
+}
+
+# Execute main function
+main "$@"
