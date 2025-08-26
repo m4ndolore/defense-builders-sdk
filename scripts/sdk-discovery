@@ -1,0 +1,335 @@
+#!/bin/bash
+# DBSDK Version Discovery CLI
+# Command-line interface for SDK version discovery
+# https://github.com/iotactical/defense-builders-sdk
+
+set -e
+
+# Script directory and libraries
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+DISCOVERY_LIB="$REPO_ROOT/lib/sdk-discovery.sh"
+
+# Check if discovery library exists and source it
+if [[ ! -f "$DISCOVERY_LIB" ]]; then
+    echo "Error: Discovery library not found: $DISCOVERY_LIB" >&2
+    exit 1
+fi
+
+source "$DISCOVERY_LIB"
+
+# CLI Colors
+BOLD='\033[1m'
+NC='\033[0m'
+
+# Show help
+show_help() {
+    cat << EOF
+${BOLD}DBSDK Version Discovery CLI${NC}
+GitHub API-based SDK version discovery for defense SDKs
+
+${BOLD}USAGE:${NC}
+    sdk-discovery COMMAND [OPTIONS]
+
+${BOLD}COMMANDS:${NC}
+    list-sdk-types          List supported SDK types
+    discover SDK_TYPE       Discover versions for specific SDK type
+    discover-all           Discover versions for all SDK types
+    validate SDK_TYPE VER  Validate SDK type and version format
+    repos SDK_TYPE         List repositories for SDK type
+    metadata SDK_TYPE      Get detailed metadata for SDK versions
+
+${BOLD}OPTIONS:${NC}
+    --no-cache             Skip cache and force fresh discovery
+    --include-metadata     Include detailed repository metadata
+    --validate-branches    Validate version branches exist (default: true)
+    --format FORMAT        Output format: simple, json, table (default: simple)
+    -v, --verbose          Enable verbose output
+    --debug               Enable debug output
+
+${BOLD}EXAMPLES:${NC}
+    # List all supported SDK types
+    sdk-discovery list-sdk-types
+    
+    # Discover ATAK-CIV versions
+    sdk-discovery discover atak-civ
+    
+    # Discover all SDK versions with metadata
+    sdk-discovery discover-all --include-metadata --format json
+    
+    # List repositories for WinTAK SDK
+    sdk-discovery repos wintak
+    
+    # Validate version format
+    sdk-discovery validate atak-civ 5.5.0.5
+
+${BOLD}SUPPORTED SDK TYPES:${NC}
+    atak-civ        Android Tactical Assault Kit (Civil)
+    wintak          Windows Tactical Assault Kit  
+    tak-server      TAK Server SDK
+    atak-forwarder  ATAK Forwarder SDK
+
+${BOLD}REPOSITORY PATTERN:${NC}
+    {SDK-TYPE}-{VERSION}-SDK -> {sdk-type}-{version} branch
+    
+    Examples:
+    ATAK-CIV-5.5.0.5-SDK    -> atak-civ-5.5.0.5 branch
+    WinTAK-5.2.1.4-SDK      -> wintak-5.2.1.4 branch
+
+${BOLD}ENVIRONMENT VARIABLES:${NC}
+    GITHUB_TOKEN           GitHub personal access token (recommended)
+    GITHUB_ORG            GitHub organization (default: iotactical)
+    DISCOVERY_CACHE_TTL   Cache TTL in seconds (default: 300)
+    DBSDK_DEBUG           Enable debug logging (true/false)
+EOF
+}
+
+# Format output based on requested format
+format_output() {
+    local format="$1"
+    local sdk_type="$2"
+    local data="$3"
+    
+    case "$format" in
+        "json")
+            echo "$data" | jq .
+            ;;
+        "table")
+            if echo "$data" | jq -e 'type == "array"' >/dev/null 2>&1; then
+                # Simple version array
+                echo "SDK Type: $sdk_type"
+                echo "Versions:"
+                echo "$data" | jq -r '.[]' | while read -r version; do
+                    echo "  $version"
+                done
+            else
+                # Full metadata
+                echo "$data" | jq -r '
+                    if .metadata then
+                        "SDK Type: " + .sdk_type,
+                        "Versions: " + (.versions | join(", ")),
+                        "Repositories:",
+                        (.metadata[] | "  " + .name + " -> " + .branch + " (" + .updated_at + ")")
+                    else
+                        "Versions: " + (. | join(", "))
+                    end
+                '
+            fi
+            ;;
+        "simple"|*)
+            if echo "$data" | jq -e 'type == "array"' >/dev/null 2>&1; then
+                echo "$data" | jq -r '.[]'
+            else
+                echo "$data" | jq -r '.versions[]?'
+            fi
+            ;;
+    esac
+}
+
+# Process command-line arguments
+FORMAT="simple"
+USE_CACHE="true"
+INCLUDE_METADATA="false"
+VALIDATE_BRANCHES="true"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --no-cache)
+            USE_CACHE="false"
+            shift
+            ;;
+        --include-metadata)
+            INCLUDE_METADATA="true"
+            shift
+            ;;
+        --no-validate-branches)
+            VALIDATE_BRANCHES="false"
+            shift
+            ;;
+        --format)
+            FORMAT="$2"
+            shift 2
+            ;;
+        -v|--verbose)
+            export DBSDK_VERBOSE=true
+            shift
+            ;;
+        --debug)
+            export DBSDK_DEBUG=true
+            shift
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+# Main command processing
+main() {
+    local command="$1"
+    shift || true
+    
+    # Check GitHub authentication
+    check_github_auth || discovery_log_warn "Consider setting GITHUB_TOKEN for higher API rate limits"
+    
+    case "$command" in
+        "list-sdk-types")
+            discovery_log_info "Supported SDK types:"
+            for sdk_type in "${!SDK_PATTERNS[@]}"; do
+                local pattern="${SDK_PATTERNS[$sdk_type]}"
+                echo "  $sdk_type -> $pattern"
+            done
+            ;;
+        "discover")
+            local sdk_type="$1"
+            
+            if [[ -z "$sdk_type" ]]; then
+                discovery_log_error "SDK type required"
+                echo "Usage: sdk-discovery discover SDK_TYPE"
+                exit 1
+            fi
+            
+            if ! validate_sdk_type "$sdk_type"; then
+                exit 1
+            fi
+            
+            discovery_log_info "Discovering versions for SDK type: $sdk_type"
+            
+            local result
+            if [[ "$USE_CACHE" == "true" ]]; then
+                result=$(discover_sdk_versions_cached "$sdk_type")
+            else
+                result=$(discover_sdk_versions "$sdk_type")
+            fi
+            
+            if [[ -n "$result" ]]; then
+                # Convert to JSON array for consistent formatting
+                local json_result
+                json_result=$(echo "$result" | jq -R . | jq -s .)
+                format_output "$FORMAT" "$sdk_type" "$json_result"
+            else
+                discovery_log_error "No versions found for SDK type: $sdk_type"
+                exit 1
+            fi
+            ;;
+        "discover-all")
+            discovery_log_info "Discovering versions for all SDK types"
+            
+            local result
+            result=$(discover_all_sdk_versions "$INCLUDE_METADATA")
+            
+            if [[ -n "$result" ]]; then
+                if [[ "$INCLUDE_METADATA" == "true" ]]; then
+                    format_output "$FORMAT" "all" "$result"
+                else
+                    # Parse simple format
+                    echo "$result" | while IFS=':' read -r sdk_type versions; do
+                        echo "=== $sdk_type ==="
+                        echo "$versions" | tr ',' '\n'
+                        echo
+                    done
+                fi
+            else
+                discovery_log_error "No versions found for any SDK type"
+                exit 1
+            fi
+            ;;
+        "repos")
+            local sdk_type="$1"
+            
+            if [[ -z "$sdk_type" ]]; then
+                discovery_log_error "SDK type required"
+                echo "Usage: sdk-discovery repos SDK_TYPE"
+                exit 1
+            fi
+            
+            if ! validate_sdk_type "$sdk_type"; then
+                exit 1
+            fi
+            
+            discovery_log_info "Discovering repositories for SDK type: $sdk_type"
+            
+            local repositories
+            repositories=$(discover_sdk_repositories "$sdk_type")
+            
+            if [[ -n "$repositories" ]]; then
+                echo "$repositories"
+            else
+                discovery_log_error "No repositories found for SDK type: $sdk_type"
+                exit 1
+            fi
+            ;;
+        "metadata")
+            local sdk_type="$1"
+            
+            if [[ -z "$sdk_type" ]]; then
+                discovery_log_error "SDK type required"
+                echo "Usage: sdk-discovery metadata SDK_TYPE"
+                exit 1
+            fi
+            
+            if ! validate_sdk_type "$sdk_type"; then
+                exit 1
+            fi
+            
+            discovery_log_info "Getting metadata for SDK type: $sdk_type"
+            
+            local result
+            result=$(discover_sdk_versions_full "$sdk_type" "$VALIDATE_BRANCHES" "true")
+            
+            if [[ -n "$result" ]]; then
+                format_output "$FORMAT" "$sdk_type" "$result"
+            else
+                discovery_log_error "No metadata found for SDK type: $sdk_type"
+                exit 1
+            fi
+            ;;
+        "validate")
+            local sdk_type="$1"
+            local version="$2"
+            
+            if [[ -z "$sdk_type" || -z "$version" ]]; then
+                discovery_log_error "SDK type and version required"
+                echo "Usage: sdk-discovery validate SDK_TYPE VERSION"
+                exit 1
+            fi
+            
+            if validate_sdk_type "$sdk_type" && validate_version_format "$sdk_type" "$version"; then
+                discovery_log_success "Valid: $sdk_type v$version"
+                
+                # Check if repository and branch exist
+                local repo_pattern="${SDK_PATTERNS[$sdk_type]/\*/$version}"
+                local expected_branch="${sdk_type}-${version}"
+                
+                echo "Expected repository: $repo_pattern"
+                echo "Expected branch: $expected_branch"
+                
+                # Validate actual existence
+                if check_version_branch "$sdk_type" "$repo_pattern" "$version"; then
+                    discovery_log_success "Repository and branch exist"
+                else
+                    discovery_log_warn "Repository or branch may not exist"
+                fi
+            else
+                exit 1
+            fi
+            ;;
+        "")
+            discovery_log_error "Command required"
+            show_help
+            exit 1
+            ;;
+        *)
+            discovery_log_error "Unknown command: $command"
+            show_help
+            exit 1
+            ;;
+    esac
+}
+
+# Execute main function
+main "$@"

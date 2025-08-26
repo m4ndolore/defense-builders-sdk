@@ -40,25 +40,14 @@ jobs:
     
     - name: Discover SDK versions
       id: versions
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # In production, this would scan for actual SDK files
-        # For now, using the known versions from the repository structure
-        VERSIONS='["5.3.0.12","5.4.0.21","5.5.0.5"]'
-        echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
-        echo "Discovered versions: $VERSIONS"
-        
-        # Filter by input version if specified
-        if [[ -n "${{ github.event.inputs.version }}" ]]; then
-          INPUT_VERSION="${{ github.event.inputs.version }}"
-          if echo "$VERSIONS" | grep -q "\"$INPUT_VERSION\""; then
-            VERSIONS="[\"$INPUT_VERSION\"]"
-            echo "Filtered to input version: $VERSIONS"
-          else
-            echo "::error::Version $INPUT_VERSION not found in available versions"
-            exit 1
-          fi
-          echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
-        fi
+        # Use the workflow discovery system with fallback for MVP
+        ./scripts/workflow-discover-versions.sh discover \
+          "atak-civ" \
+          "${{ github.event.inputs.version }}" \
+          '["5.3.0.12","5.4.0.21","5.5.0.5"]'
 
   build-base:
     runs-on: ubuntu-latest
