@@ -36,14 +36,20 @@ jobs:
           # Check which SDKs have changes
           changed_sdks=()
           for sdk_dir in sdks/*/; do
-            sdk_name=$(basename "$sdk_dir")
-            if git diff --quiet HEAD~1 HEAD -- "$sdk_dir" 2>/dev/null || [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-              changed_sdks+=("\"$sdk_name\"")
+            if [ -d "$sdk_dir" ]; then
+              sdk_name=$(basename "$sdk_dir")
+              # Check if SDK directory has changes or if this is a manual dispatch
+              if ! git diff --quiet HEAD~1 HEAD -- "$sdk_dir" 2>/dev/null || [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+                changed_sdks+=("\"$sdk_name\"")
+                echo "Detected changes in SDK: $sdk_name"
+              fi
             fi
           done
           if [ ${#changed_sdks[@]} -eq 0 ]; then
+            echo "No SDK changes detected"
             echo "sdks=[]" >> $GITHUB_OUTPUT
           else
+            echo "Changed SDKs: ${changed_sdks[*]}"
             echo "sdks=[$(IFS=,; echo "${changed_sdks[*]}")]" >> $GITHUB_OUTPUT
           fi
         fi
@@ -120,31 +126,52 @@ jobs:
       with:
         image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-${{ matrix.sdk }}:latest
         format: 'sarif'
-        output: 'trivy-results-${{ matrix.sdk }}.sarif'
+        output: 'trivy-results-${{ matrix.sdk }}-${{ github.sha }}.sarif'
 
     - name: Upload Trivy scan results
       uses: github/codeql-action/upload-sarif@v3
       if: always()
       with:
-        sarif_file: 'trivy-results-${{ matrix.sdk }}.sarif'
+        sarif_file: 'trivy-results-${{ matrix.sdk }}-${{ github.sha }}.sarif'
+        category: 'trivy-${{ matrix.sdk }}'
 
     - name: Test SDK image
       run: |
-        docker run --rm ${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-${{ matrix.sdk }}:latest /opt/dbsdk/atak-civ/scripts/healthcheck-atak.sh
+        # Test basic DBSDK functionality
+        docker run --rm ${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-${{ matrix.sdk }}:latest /opt/dbsdk/scripts/healthcheck.sh
+        
+        # Test SDK-specific health check if it exists
+        if docker run --rm ${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-${{ matrix.sdk }}:latest test -x /opt/dbsdk/${{ matrix.sdk }}/scripts/healthcheck-${{ matrix.sdk }}.sh; then
+          echo "Running SDK-specific health check..."
+          docker run --rm ${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-${{ matrix.sdk }}:latest /opt/dbsdk/${{ matrix.sdk }}/scripts/healthcheck-${{ matrix.sdk }}.sh
+        else
+          echo "No SDK-specific health check found, using base health check only"
+        fi
 
     - name: Generate SBOM
       uses: anchore/sbom-action@v0
       with:
         image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-${{ matrix.sdk }}:latest
         format: spdx-json
-        output-file: sbom-${{ matrix.sdk }}.spdx.json
+        output-file: sbom-${{ matrix.sdk }}-${{ github.sha }}.spdx.json
 
     - name: Upload SBOM
       uses: actions/upload-artifact@v4
       with:
         name: sbom-${{ matrix.sdk }}-${{ github.sha }}
-        path: sbom-${{ matrix.sdk }}.spdx.json
+        path: sbom-${{ matrix.sdk }}-${{ github.sha }}.spdx.json
+        retention-days: 90
 
-    - name: Success notification
+    - name: Build summary
+      if: always()
       run: |
-        echo "SDK Image Built: ${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-${{ matrix.sdk }}:latest" >> $GITHUB_STEP_SUMMARY
+        echo "## 🚀 DBSDK ${{ matrix.sdk }} Build Complete" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Image:** \`${{ env.REGISTRY }}/${{ github.repository_owner }}/dbsdk-${{ matrix.sdk }}:latest\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
+        echo '${{ steps.meta.outputs.tags }}' | sed 's/^/- `/' | sed 's/$/`/' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Security Scan:** Trivy results uploaded to Security tab" >> $GITHUB_STEP_SUMMARY
+        echo "**SBOM:** Software Bill of Materials generated and uploaded" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
