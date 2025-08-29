@@ -1,0 +1,16 @@
+{
+  "projectId": "prj_WeqSzO8kPNQx5945EWh2WFxtLSKe",
+  "orgId": "team_5OBCfb6l0fraEIucqctckyaT",
+  "projectName": "def_build_market",
+  "settings": {
+    "createdAt": 1756429333227,
+    "framework": "nextjs",
+    "devCommand": null,
+    "installCommand": null,
+    "buildCommand": null,
+    "outputDirectory": null,
+    "rootDirectory": null,
+    "directoryListing": false,
+    "nodeVersion": "22.x"
+  }
+}
