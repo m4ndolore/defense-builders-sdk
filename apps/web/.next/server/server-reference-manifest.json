@@ -1,5 +1,16 @@
 {
-  "node": {},
+  "node": {
+    "7738a426b99e033a8e0458e068db75dead9d86c8": {
+      "workers": {
+        "app/page": "(action-browser)/../../node_modules/.pnpm/next@14.2.0_react-dom@18.3.1_react@18.3.1/node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22%2FUsers%2Fpaulgarcia%2FDev%2Fdefense-builders-sdk%2Fnode_modules%2F.pnpm%2F%40clerk%2Bnextjs%405.7.5_next%4014.2.0_react-dom%4018.3.1_react%4018.3.1%2Fnode_modules%2F%40clerk%2Fnextjs%2Fdist%2Fesm%2Fapp-router%2Fserver-actions.js%22%2C%5B%22invalidateCacheAction%22%5D%5D%5D&__client_imported__=true!",
+        "app/dashboard/page": "(action-browser)/../../node_modules/.pnpm/next@14.2.0_react-dom@18.3.1_react@18.3.1/node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22%2FUsers%2Fpaulgarcia%2FDev%2Fdefense-builders-sdk%2Fnode_modules%2F.pnpm%2F%40clerk%2Bnextjs%405.7.5_next%4014.2.0_react-dom%4018.3.1_react%4018.3.1%2Fnode_modules%2F%40clerk%2Fnextjs%2Fdist%2Fesm%2Fapp-router%2Fserver-actions.js%22%2C%5B%22invalidateCacheAction%22%5D%5D%5D&__client_imported__=true!"
+      },
+      "layer": {
+        "app/page": "action-browser",
+        "app/dashboard/page": "action-browser"
+      }
+    }
+  },
   "edge": {},
-  "encryptionKey": "FsmLGMO/R+b67+lM8bqLpd7LFOahWuY4nrs5i5bxF2c="
+  "encryptionKey": "UOK/MOys1dG+WX6TfCtif/5CfMqU4+5NxW8rKsWSeHw="
 }

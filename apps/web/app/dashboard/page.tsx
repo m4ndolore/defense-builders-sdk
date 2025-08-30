@@ -47,3 +47,8 @@ export default async function DashboardPage() {
               Browse available projects
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}

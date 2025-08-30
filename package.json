@@ -1,0 +1,29 @@
+{
+  "name": "defense-builders-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A marketplace and SDK platform for defense technology development",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "start": "turbo run start",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "clean": "turbo run clean",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "web:dev": "pnpm --filter @defense-builders/web dev",
+    "api:dev": "cd apps/api && source venv/bin/activate && python manage.py runserver"
+  },
+  "devDependencies": {
+    "prettier": "^3.0.3",
+    "turbo": "^1.10.16"
+  },
+  "packageManager": "pnpm@8.15.5",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
